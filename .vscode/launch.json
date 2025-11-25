@@ -1,0 +1,125 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "DataPreparation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["-s",
+                    "/media/vincent/HDD-01/queen_lightweight/data/campus/children",
+                    "-t",
+                    "/media/vincent/HDD-01/queen_lightweight/data/campus/children"],
+        },
+
+        {
+            "name": "TrainDynerf",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["--config",
+                    "configs/dynerf_coffee_martini.yaml", 
+                    "-s",
+                    // "data/dynerf/sear_steak", 
+                    "data/dynerf/coffee_martini", 
+                    "-m",
+                    // "output/dynerf/sear_steak",
+                    "output/dynerf/coffee_martini", 
+                    "--log_images",
+                    // "--log_ply",
+                ],
+            "justMyCode": false,
+        },
+
+
+        {
+            "name": "TrainTechnicolor",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["--config",
+                    "configs/technicolor_birthday.yaml", 
+                    "-s",
+                    // "data/dynerf/sear_steak", 
+                    "data/technicolor/birthday", 
+                    "-m",
+                    // "output/dynerf/sear_steak",
+                    "output/technicolor/birthday", 
+                    "--log_images",
+                    // "--log_ply",
+                ],
+            "justMyCode": false,
+        },
+
+        {
+            "name": "TrainCampus",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["--config",
+                    "configs/campus_children.yaml", 
+                    "-s",
+                    "data/campus/children", 
+                    "-m",
+                    "output/campus/children", 
+                    "--log_images",
+                    // "--log_ply",
+                ],
+            "justMyCode": false,
+        },
+
+        {
+            "name": "TrainImmersive",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["--config",
+                    "configs/immersive_flames.yaml", 
+                    "-s",
+                    "data/immersive/flames", 
+                    "-m",
+                    "output/immersive/flames", 
+                    "--log_images",
+                    "--log_ply",
+                ],
+            "justMyCode": false,
+        },
+
+
+        {
+            "name": "Metrics",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                    "-m",
+                    "output/dynerf/cut_roasted_beef"],
+        },
+
+
+        {
+            "name": "Render",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["--config",
+                    "configs/dynerf_sear_steak.yaml", 
+                    "-s",
+                    "data/dynerf/sear_steak", 
+                    "-m",
+                    "output/dynerf/sear_steak",
+                ],
+        },
+
+    ]
+}
