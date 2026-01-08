@@ -1,6 +1,6 @@
 
-DATA_ROOT_DIR="/media/vincent/HDD-01/queen_lightweight/data"
-DATA_OUTPUT_DIR="/media/vincent/HDD-01/queen_lightweight/output"
+DATA_ROOT_DIR="/media/vincent/HDD-01/S2GS/data"
+DATA_OUTPUT_DIR="/media/vincent/HDD-01/S2GS/output"
 
 DATASETS=(
     dynerf
@@ -74,6 +74,7 @@ for SCENE in "${SCENES[@]}"; do
     -m ${OUTPUT_PATH} \
     --log_images \
     "
+    # Add --log_labels if needed \
 
     CMD_11="python ./metrics_video.py \
     -m ${OUTPUT_PATH} \
@@ -90,5 +91,5 @@ for SCENE in "${SCENES[@]}"; do
     # eval $CMD_8
     # eval $CMD_9
     eval $CMD_10
-    # eval $CMD_11
+    eval $CMD_11
 done

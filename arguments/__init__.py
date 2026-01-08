@@ -112,6 +112,7 @@ class ModelParams(ParamGroup):
         self.znear = 5.0
         self.zfar = 300.0
         self.log_images = False
+        self.log_labels = False
         self.log_ply = False
         self.log_compressed = False
         self.max_frames = 300

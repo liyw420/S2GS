@@ -3,16 +3,13 @@ DATA_ROOT_DIR="/media/vincent/HDD-01/S2GS/data"
 DATA_OUTPUT_DIR="/media/vincent/HDD-01/S2GS/output"
 
 DATASETS=(
-    immersive
+    enerf
     )
 
 SCENES=(
-    # flames
-    exhibit
-    # truck
-    # welder
-    # facepaint1
-    # cave
+    actor1_4
+    actor2_3
+    actor5_6
     )
 
 RESOLUTION=(
@@ -28,35 +25,43 @@ for SCENE in "${SCENES[@]}"; do
     SCENE_PATH=${DATA_ROOT_DIR}/${DATASETS}/${SCENE}
     OUTPUT_PATH=${DATA_OUTPUT_DIR}/${DATASETS}/${SCENE}
 
-    CMD_2="python ./scripts/pre_immersive/video.py \
+    CMD_1="python ./scripts/pre_enerf/image.py \
+    --src ${SCENE_PATH} \
+    --dst ${SCENE_PATH} \
+    "
+
+    CMD_Add="rm -rf ${SCENE_PATH}/images/{00,01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17}"
+
+    CMD_2="python ./scripts/pre_enerf/video.py \
     --source ${SCENE_PATH} \
     --target ${SCENE_PATH} \
     "
 
-    CMD_3="python ./scripts/pre_immersive/convert.py \
+    CMD_3="python ./scripts/pre_enerf/convert.py \
     -s ${SCENE_PATH}/frame000001 \
     "
 
     # ----- (2) Processing Data from 3DGStream to Queen -----
-    CMD_4="python ./scripts/pre_immersive/downsample_point.py \
+    CMD_4="python ./scripts/pre_enerf/downsample_point.py \
     ${SCENE_PATH}/frame000001/fused.ply \
     ${SCENE_PATH}/points3D_downsample2.ply \
     "
 
-    CMD_5="python ./scripts/pre_immersive/copy_cams.py \
+    CMD_5="python ./scripts/pre_enerf/copy_cams.py \
     --source ${SCENE_PATH}/frame000001 \
     --scene ${SCENE_PATH} \
     "
 
-    CMD_6="python ./scripts/pre_immersive/convert_frames.py \
+    CMD_6="python ./scripts/pre_enerf/convert_frames.py \
+    -s ${SCENE_PATH} \
+    --resize
+    "
+
+    CMD_7="python ./scripts/pre_enerf/DataFrom3DGStreamToQueen.py \
     -s ${SCENE_PATH} \
     "
 
-    CMD_7="python ./scripts/pre_immersive/DataFrom3DGStreamToQueen.py \
-    -s ${SCENE_PATH} \
-    "
-
-    CMD_8="python ./scripts/pre_immersive/imgs2poses.py \
+    CMD_8="python ./scripts/pre_enerf/imgs2poses.py \
     --scenedir ${SCENE_PATH}/frame000001 \
     --outdir ${SCENE_PATH} \
     "
@@ -66,7 +71,7 @@ for SCENE in "${SCENES[@]}"; do
 
     # ----- (4) Train, Render and Metrics  -----
     CMD_10="python ./train.py \
-    --config configs/${DATASETS}_${SCENE}.yaml \
+    --config configs/${DATASETS}.yaml \
     -s ${SCENE_PATH} \
     -m ${OUTPUT_PATH} \
     --log_images \
@@ -77,14 +82,16 @@ for SCENE in "${SCENES[@]}"; do
     "
 
     echo "========= ${SCENE}: XXX   ========="
+    # eval $CMD_1
+    # eval $CMD_Add
     # eval $CMD_2
-    eval $CMD_3
+    # eval $CMD_3
     # eval $CMD_4
     # eval $CMD_5
     # eval $CMD_6
     # eval $CMD_7
     # eval $CMD_8
     # eval $CMD_9
-    # eval $CMD_10
-    # eval $CMD_11
+    eval $CMD_10
+    eval $CMD_11
 done

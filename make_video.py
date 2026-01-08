@@ -2,9 +2,9 @@ import cv2
 import os
 
 # 设置读取图像的文件夹路径
-image_folder = '/media/vincent/HDD-01/queen_lightweight/output/dynerf/flame_salmon/spiral'
+image_folder = '/media/vincent/HDD-01/S2GS/output/dynerf/flame_salmon/spiral'
 # 设置保存视频的文件名
-video_filename = '/media/vincent/HDD-01/queen_lightweight/output/dynerf/flame_salmon/spiral/output_video.mp4'
+video_filename = '/media/vincent/HDD-01/S2GS/output/dynerf/flame_salmon/spiral/output_video.mp4'
 
 # 获取所有PNG文件的列表
 images = [img for img in os.listdir(image_folder) if img.endswith(".png")]

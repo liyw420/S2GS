@@ -52,7 +52,7 @@ quantize_params:
     f_rest_ldec_std: 1.0e-1
 
     f_dc_quant_type: 'sq_res'
-    f_dc_latent_dim: 8
+    f_dc_latent_dim: 4
     f_dc_latent_scale_norm: 'none'
     f_dc_ldecode_matrix: 'learnable'
     f_dc_ldec_std: 1.0e-4
@@ -64,7 +64,7 @@ quantize_params:
     rot_ldec_std: 1.0e-2
 
     op_quant_type: 'sq_res'
-    op_latent_dim: 3
+    op_latent_dim: 1
     op_latent_scale_norm: 'none'
     op_ldecode_matrix: 'dft'
     op_ldec_std: 1.0e-4
@@ -87,7 +87,7 @@ opt_params_initial:
     lambda_tv: 0.1
 
 opt_params_rest:
-    epochs_rest: 20
+    epochs_rest: 10
 
     offset_ldecs_lr_rest: 1.0e-3
     offset_lr_scaling_rest: 10.0
@@ -165,13 +165,13 @@ opt_params_lod:
     fork: 2
     visible_threshold: 0.9
     dist2level: 'round'
-    base_layer: 16
+    base_layer: 12
     progressive: True
     extend: 1.1
     dist_ratio: 0.999
     levels: -1
     init_level: -1
-    log_base: 6
+    log_base: 2
 
     frz_anchor: "none"
     frz_offset: "none" # ["none","st","all"]

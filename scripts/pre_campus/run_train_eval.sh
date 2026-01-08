@@ -1,6 +1,6 @@
 
-DATA_ROOT_DIR="/media/vincent/HDD-01/queen_lightweight/data"
-DATA_OUTPUT_DIR="/media/vincent/HDD-01/queen_lightweight/output"
+DATA_ROOT_DIR="/media/vincent/HDD-01/S2GS/data"
+DATA_OUTPUT_DIR="/media/vincent/HDD-01/S2GS/output"
 
 DATASETS=(
     campus

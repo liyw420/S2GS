@@ -18,7 +18,7 @@ import torch
 import socket
 from random import randint, Random
 from utils.loss_utils import l1_loss, ssim, l2_loss, tv_loss, lp_loss, DepthRelLoss, mse_loss
-from gaussian_renderer import render, network_gui, render_mask, render_technicolor
+from gaussian_renderer import render, network_gui, render_mask, render_lightweight
 from scene import Scene, GaussianModel
 from utils.general_utils import safe_state, parse_cfg
 import cv2
@@ -41,7 +41,7 @@ from scene.cameras import camName_from_Path, imageName_from_Path
 from argparse import ArgumentParser, Namespace
 from utils.general_utils import DecayScheduler, kthvalue
 from utils.graphics_utils import adjust_depths
-from utils.image_utils import resize_image, downsample_image, blur_image, get_mask, write_depth, coords_grid, flow_warp, coords_grid_proj, get_depth, resize_dims
+from utils.image_utils import resize_image, downsample_image, blur_image, get_mask, write_depth, coords_grid, flow_warp, coords_grid_proj, get_depth, resize_dims, add_metrics_label_to_image
 from utils.loader_utils import MultiViewVideoDataset
 from utils.loader_utils import SequentialMultiviewSampler, MultiViewVideoDataset
 from arguments import ModelParams, PipelineParams, OptimizationParams, QuantizeParams, OptimizationParamsInitial, OptimizationParamsRest
@@ -50,6 +50,7 @@ from MiDaS.run import process
 from scene.decoders import LatentDecoder, LatentDecoderRes, Gate
 from generate_video_all import symlink
 from scipy import ndimage
+from torch_scatter import scatter_max
 
 # Disable tqdm to make pdb easier to use
 # Set to False to disable progress bars for debugging
@@ -227,11 +228,12 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
 
         first_iter = 1
         
-        scene.model_path = os.path.join(args.model_path,'frames',str(dataset.start_idx + frame_idx).zfill(4))
-        os.makedirs(scene.model_path,exist_ok=True)
+        if dataset.log_ply:
+            scene.model_path = os.path.join(args.model_path,'frames',str(dataset.start_idx + frame_idx).zfill(4))
+            os.makedirs(scene.model_path,exist_ok=True)
 
         ema_loss_for_log, cur_size, best_psnr = 0.0, 0.0, 0.0
-        metrics = {'val':{'psnr':0.0, 'loss':0.0, 'fps': 0.0}, 'test':{'psnr':0.0, 'loss': 0.0, 'fps': 0.0}}
+        metrics = {'val':{'psnr':0.0, 'loss':0.0, 'fps': 0.0, 'storage': 0.0}, 'test':{'psnr':0.0, 'loss': 0.0, 'fps': 0.0, 'storage': 0.0}}
         camera_idx_stack = []
         report = None
 
@@ -380,15 +382,18 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                         # Use gradient differences for gate initialization
                         init_probs = grad_diff/(grad_diff+grad_diff.median())
                         gaussians.init_probs = init_probs.flatten()
+                    num_gates, inverse_indices = torch.unique(gaussians.get_root_indices, dim=0, return_inverse=True)
+                    gaussians.init_probs = scatter_max(gaussians.init_probs, inverse_indices, dim=0)[0]
                     if gaussians.gate_atts is None:
-                        gaussians.gate_atts = Gate(gaussians._offset.shape[0], 
+                        gaussians.gate_atts = Gate(num_gates.shape[0], 
                                                   gamma=dataset.gate_gamma,
                                                   eta=dataset.gate_eta,
                                                   lr = dataset.gate_lr, 
                                                   temp=dataset.gate_temp,
                                                   lambda_l2=dataset.gate_lambda_l2, 
                                                   lambda_l0=dataset.gate_lambda_l0, 
-                                                  init_probs=gaussians.init_probs)
+                                                  init_probs=gaussians.init_probs,
+                                                  inverse_indices=inverse_indices)
                         gaussians.gate_atts.train()
                     else:
                         gaussians.gate_atts.reset_params(init_probs=gaussians.init_probs)
@@ -484,10 +489,6 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
 
             if gaussians.gate_atts is not None and gaussians.gate_atts.training:
                 loss += gaussians.gate_atts.reg_loss(gaussians._ungated_offset_res)
-                # atts = gaussians.get_atts # All the latent variables
-                # for i, att_name in enumerate(atts):
-                #     if gaussians.latent_args.quant_type[i] == 'sq_res':
-                #         loss += gaussians.latent_decoders[att_name].reg_loss(atts[att_name])
 
             if opt.lambda_posres>0.0:
                 residual = gaussians.get_offset-prev_xyz.detach()
@@ -534,6 +535,10 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                 if iteration == opt.iterations:
                     is_test = True
                     
+                # report = training_report(tb_writer, wandb_enabled, dataset, frame_idx, iteration, Ll1, loss, 
+                #                          l1_loss, cur_size, frame_time, is_test, scene, 
+                #                          render_lightweight, (pipe, background, iteration, "RGB"), prev_report=report)
+                
                 report = training_report(tb_writer, wandb_enabled, dataset, frame_idx, iteration, Ll1, loss, 
                                          l1_loss, cur_size, frame_time, is_test, scene, 
                                          render, (pipe, background, iteration, "RGB"), prev_report=report)
@@ -547,6 +552,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                         metrics[config_name]['psnr'] = report[config_name]['psnr']
                         metrics[config_name]['loss'] = report[config_name]['l1']
                         metrics[config_name]['fps'] = report[config_name]['fps']
+                        metrics[config_name]['storage'] = report[config_name]['storage']
                     if metrics['test']['psnr'] > best_psnr:
                         best_psnr = metrics['test']['psnr']
 
@@ -554,13 +560,12 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                 ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
 
                 if (iteration) % dataset.log_interval == 0 or iteration == opt.iterations:
-                    cur_size = gaussians.size()/8/(10**6)
                     log_dict = {
                                 "Loss": f"{ema_loss_for_log:.{5}f}",
                                 "Num points": f"{gaussians._offset.shape[0]}",
                                 "Update points": f"{torch.count_nonzero(gaussians.mask_offset)}" \
                                                 if frame_idx>1 else f"{gaussians._offset.shape[0]}",
-                                "Size (MB)": f"{cur_size:.{2}f}",
+                                "Size (MB)": f"{metrics['test']['storage']:.{2}f}",
                                 "FPS": f"{metrics['test']['fps']:.{2}f}",
                                 "PSNR (Test)": f"{metrics['test']['psnr']:.{2}f}",
                                 "PSNR (Val)": f"{metrics['val']['psnr']:.{2}f}",
@@ -587,7 +592,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                             gaussians.run_densify(iteration, opt_lod)
                         # else:
                         #     # Dynamic densification for subsequent frames
-                        #     gaussians.densify_dynamic(iteration, opt_lod)
+                            gaussians.densify_dynamic(iteration, opt_lod)
 
                     if enable_debug:
                         print(f'DEBUG ({iteration}): densification done')
@@ -619,11 +624,12 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                         #                                  os.path.join(scene.model_path, "mask.png"))
                         #     torchvision.utils.save_image(train_cameras[cam_idx].orig_mask.unsqueeze(0)*gt_image,
                         #                                  os.path.join(scene.model_path, "orig_mask.png"))
-                        video_camera = video_cameras[frame_idx-1]
-                        spiral_img = render(video_camera, gaussians, pipe, bg, iteration, "RGB")["render"]
-                        if frame_idx == 1:
-                            os.makedirs(os.path.join(dataset.model_path,"spiral"), exist_ok=True)
-                        save_image(torch.clip(spiral_img, 0.0, 1.0),os.path.join(dataset.model_path, "spiral", f"{str(dataset.start_idx + frame_idx).zfill(4)}.png"))
+                        if dataset.log_images:
+                            video_camera = video_cameras[frame_idx-1]
+                            spiral_img = render(video_camera, gaussians, pipe, bg, iteration, "RGB")["render"]
+                            if frame_idx == 1:
+                                os.makedirs(os.path.join(dataset.model_path,"spiral"), exist_ok=True)
+                            save_image(torch.clip(spiral_img, 0.0, 1.0),os.path.join(dataset.model_path, "spiral", f"{str(dataset.start_idx + frame_idx).zfill(4)}.png"))
 
                         # if frame_idx == 1:
                         #     with torch.no_grad():
@@ -701,7 +707,9 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                 "Num points": gaussians._offset.shape[0],
                 "Update points": f"{torch.count_nonzero(gaussians.mask_offset)}" \
                                     if frame_idx>1 else f"{gaussians._offset.shape[0]}",
-                "Size (MB)": round(cur_size,2),
+                "Active gates": int(torch.count_nonzero(gaussians.gate_atts.get_structural_gates()).item()) \
+                                    if (frame_idx>1 and gaussians.gate_atts is not None) else 0,
+                "Size (MB)": round(metrics['test']['storage'],2),
                 "FPS": round(metrics['test']['fps'],5),
                 "PSNR (Test)": round(metrics['test']['psnr'].item(),2),
                 "Frame time": round(frame_time,2),
@@ -712,7 +720,6 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                 "Frame time densification": round(frame_time_densify),
                 "Frame time grad": round(frame_time_grad),
                 "Frame time save & update": round(frame_time_save_update),
-
             }
         else:
             # Not using test cameras
@@ -722,7 +729,9 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                 "Num points": gaussians._offset.shape[0],
                 "Update points": f"{torch.count_nonzero(gaussians.mask_offset)}" \
                                     if frame_idx>1 else f"{gaussians._offset.shape[0]}",
-                "Size (MB)": round(cur_size,2),
+                "Active gates": int(torch.count_nonzero(gaussians.gate_atts.get_structural_gates()).item()) \
+                                    if (frame_idx>1 and gaussians.gate_atts is not None) else 0,
+                "Size (MB)": round(metrics['test']['storage'],2),
                 "FPS": round(metrics['test']['fps'].item(),2),
                 "Frame time": round(frame_time,2),
                 "Frame time IO": round(frame_time_io,2),
@@ -735,7 +744,15 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
             }
 
         training_metrics.append(frame_metrics)
-        
+        # Metric labels for video demos
+        if dataset.log_images and dataset.log_labels:
+            # For the test view
+            test_view_path = os.path.join(dataset.model_path, "test", "renders", "cam00", f"{str(dataset.start_idx + frame_idx).zfill(4)}.png")
+            add_metrics_label_to_image(test_view_path, frame_metrics)
+            # For the spiral views
+            spiral_path = os.path.join(dataset.model_path, "spiral", f"{str(dataset.start_idx + frame_idx).zfill(4)}.png")
+            add_metrics_label_to_image(spiral_path, frame_metrics)
+
         # Compute and display average metrics
         if test_image_dataset.n_cams > 0:
             avg_metrics = {
@@ -743,6 +760,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                 "PSNR (Test)": round(sum([fm["PSNR (Test)"] for fm in training_metrics])/len(training_metrics),2),
                 "Size (MB)": round(sum([fm["Size (MB)"] for fm in training_metrics])/len(training_metrics),2),
                 "FPS": round(sum([fm["FPS"] for fm in training_metrics])/len(training_metrics),2),
+                "Num points": round(sum([fm["Num points"] for fm in training_metrics])/len(training_metrics),2),
+                "Active gates": 0 if len(training_metrics) == 1 else int(sum([fm["Active gates"] for fm in training_metrics])/(len(training_metrics)-1)),
                 "Frame time": round(sum([fm["Frame time"] for fm in training_metrics])/len(training_metrics),2),
                 "Frame time I/O": round(sum([fm["Frame time IO"] for fm in training_metrics])/len(training_metrics),2),
                 "Elapsed time": round(frame_metrics["Training time elapsed"],2),
@@ -752,6 +771,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                 "Loss (Test)": round(sum([fm["Loss (Test)"] for fm in training_metrics])/len(training_metrics),5),
                 "PSNR (Test)": round(sum([fm["PSNR (Test)"] for fm in training_metrics])/len(training_metrics),2),
                 "Size (MB)": round(sum([fm["Size (MB)"] for fm in training_metrics])/len(training_metrics),2),
+                "Num points": round(sum([fm["Num points"] for fm in training_metrics])/len(training_metrics),2),
+                "Active gates": 0 if len(training_metrics) == 1 else int(sum([fm["Active gates"] for fm in training_metrics])/(len(training_metrics)-1)),
                 "Frame time": round(sum([fm["Frame time"] for fm in training_metrics])/len(training_metrics),2),
                 "Elapsed time": round(frame_metrics["Training time elapsed"],2),
             }
@@ -852,9 +873,32 @@ def training_report(tb_writer, wandb_enabled, model_args, frame_idx, iteration, 
                     os.makedirs(os.path.join(model_args.model_path,config['name'],"gt"),exist_ok=True)
                     os.makedirs(os.path.join(model_args.model_path,config['name'],"renders"),exist_ok=True)
                 for idx, viewpoint in enumerate(config['cameras']):
+                    
+                    gaussian_param = {
+                        'xyz': torch.empty(0, 3),         
+                        'color': torch.empty(0, 3),     
+                        'opacity': torch.empty(0, 1),     
+                        'scaling': torch.empty(0, 3),      
+                        'rot': torch.empty(0, 4),          
+                        'selection_mask': torch.empty(0, dtype=torch.bool)  
+                    }
+                    (xyz, color, opacity, scaling, rot, selection_mask) = scene.gaussians.generate_lod_gaussians(viewpoint, None)
+                    gaussian_param.update({
+                        'xyz': xyz,
+                        'color': color,
+                        'opacity': opacity,
+                        'scaling': scaling,
+                        'rot': rot,
+                        'selection_mask': selection_mask
+                    })
+                    torch.cuda.synchronize()
                     fps_start = time.time()
-                    image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
+                    # render_results = renderFunc(viewpoint, scene.gaussians, *renderArgs, gaussian_param=gaussian_param)
+                    render_results = renderFunc(viewpoint, scene.gaussians, *renderArgs)
+                    image = torch.clamp(render_results["render"], 0.0, 1.0)
+                    torch.cuda.synchronize()
                     fps_end = time.time()
+                    time_pre, time_render, time_post = render_results["time_pre"], render_results["time_ren"], render_results["time_post"]
                     gt_image = torch.clamp(viewpoint.original_image, 0.0, 1.0)
                     # if tb_writer and (idx < 5):
                     #     tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), 
@@ -890,13 +934,15 @@ def training_report(tb_writer, wandb_enabled, model_args, frame_idx, iteration, 
 
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])
-                fps_test =  1/ (fps_time / len(config['cameras']))         
+                fps_test =  1/ (fps_time / len(config['cameras']))
+                storage = scene.gaussians.size()/8/(10**6)  # in MB         
                 # if tb_writer:
                 #     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                 #     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
                 metrics['l1'] = l1_test
                 metrics['psnr'] = psnr_test
                 metrics['fps'] = fps_test
+                metrics['storage'] = storage
                 report[config['name']] = metrics
 
         report['iteration'] = iteration

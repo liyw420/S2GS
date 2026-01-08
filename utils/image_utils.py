@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import pathlib
 import torchvision
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import cv2
 import numpy as np
 import torch.nn.functional as F
@@ -392,4 +392,64 @@ def l1_loss(img1, img2):
     """
     return torch.abs(img1 - img2).mean()
 
-    
+def add_metrics_label_to_image(image_path, frame_metrics, save_path=None):
+    # 打开图片
+    img = Image.open(image_path).convert("RGBA")
+    W, H = img.size
+
+    # 构造标签内容
+    label_lines = [
+        f"PSNR: {frame_metrics['PSNR (Test)']:.2f} dB",
+        f"Train: {frame_metrics['Frame time IO']:.2f} Secs",
+        f"Render: {int(frame_metrics['FPS'])} FPS",
+        f"Storage: {frame_metrics['Size (MB)']:.2f} MB",
+        f"#Gaussians: {int(frame_metrics['Num points'])}",
+        f"Active Gates: {int(frame_metrics['Active gates'])}"
+    ]
+    label_text = "\n".join(label_lines)
+
+    # 字体设置
+    font_size = 50  # 可根据图片分辨率调整
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+    except:
+        font = ImageFont.load_default()
+
+    # 计算文本区域大小
+    dummy_img = Image.new("RGBA", (1, 1))
+    draw = ImageDraw.Draw(dummy_img)
+    text_w, text_h = draw.multiline_textsize(label_text, font=font, spacing=6)
+
+    # 标签区域位置和大小
+    padding = 40
+    rect_w = text_w + 2 * padding
+    rect_h = text_h + 2 * padding
+    rect_x = 0
+    rect_y = 0
+
+    # 创建透明层
+    overlay = Image.new("RGBA", img.size, (0,0,0,0))
+    overlay_draw = ImageDraw.Draw(overlay)
+
+    # 绘制半透明黑色矩形
+    overlay_draw.rectangle(
+        [rect_x, rect_y, rect_x + rect_w, rect_y + rect_h],
+        fill=(0,0,0,100)  # 220/255 透明度
+    )
+
+    # 绘制白色文字
+    overlay_draw.multiline_text(
+        (rect_x + padding, rect_y + padding),
+        label_text,
+        font=font,
+        fill=(255,255,255,255),
+        spacing=6
+    )
+
+    # 合成
+    out = Image.alpha_composite(img, overlay)
+
+    # 保存
+    if save_path is None:
+        save_path = image_path
+    out.convert("RGB").save(save_path)

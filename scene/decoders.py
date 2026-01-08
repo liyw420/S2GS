@@ -203,14 +203,7 @@ class LatentDecoder(Module):
         final_activation:str = 'none',
         clamp_weights:float = 0.0,
         ldec_std:float = 1.0,
-        num_gates:int = 1,
-        temp:float = 0.5,
-        gamma:float = -0.1,
-        eta:float = 1.1,
-        lambda_l2:float = 0.0,
-        lambda_l0:float = 1.0,
-        device:str = 'cuda',
-        init_probs:Tensor = None,
+        gates:Tensor = None,
         **kwargs,
     ) -> None:
         super(LatentDecoder, self).__init__()
@@ -263,61 +256,7 @@ class LatentDecoder(Module):
         self.mask = None
         self.reset_parameters('normal', ldec_std)
 
-    #     self.num_gates = num_gates  
-    #     self.log_alphas = nn.Parameter(torch.zeros((num_gates),dtype=torch.float32,
-    #                                                device=device).requires_grad_(True))
-    #     self.gamma = gamma  # Lower bound of concrete distribution
-    #     self.eta = eta      # Upper bound of concrete distribution
-    #     self.temp = temp    # Temperature for concrete relaxation
-    #     if init_probs is not None:
-    #         self.reset_params_gate(init_probs)
-
-    #     # Regularization weights
-    #     self.lambda_l2 = lambda_l2  # L2 regularization on residuals
-    #     self.lambda_l0 = lambda_l0  # L0 regularization (sparsity)
-
-    # def reset_params_gate(self, init_probs=None):
-    #     """Reset gate parameters, optionally with initialization probabilities."""
-    #     if init_probs is not None:
-    #         init_probs = init_probs.flatten()
-    #         assert init_probs.shape[0] == self.log_alphas.shape[0]
-    #         init_probs = torch.clamp(init_probs,epsilon,1-epsilon)
-    #         # Convert probabilities to log odds with temperature scaling
-    #         self.log_alphas.data = torch.log(init_probs/(1-init_probs))+\
-    #                                 self.temp*math.log(-self.gamma/self.eta)
-    #         self.clamp_params()
-    #         gate = self.sample_gate_Gumbel_Softmax(stochastic=False)
-    #         self.gate = gate # used outside of module
-    #     else:
-    #         self.log_alphas.data *= 0
-
-    # def sample_gate_Gumbel_Softmax(self, stochastic=True):
-    #     """Sample gate values using Gumbel-Softmax/Binary Concrete."""
-    #     self.clamp_params()
-    #     eps = 1e-6
-    #     if stochastic:
-    #         # Gumbel noise
-    #         u = torch.rand_like(self.log_alphas)
-    #         gumbel = -torch.log(-torch.log(u + eps) + eps)
-    #         # Binary Concrete
-    #         y = (self.log_alphas + gumbel) / self.temp
-    #         gate = torch.sigmoid(y)
-    #     else:
-    #         # Deterministic (mean) gate
-    #         gate = torch.sigmoid(self.log_alphas / self.temp)
-        
-    #     gate = torch.where(torch.isnan(gate), torch.zeros_like(gate), gate)
-        
-    #     # Optionally harden gate for inference (0/1)
-    #     # gate = (gate > torch.quantile(gate, 0.95) ).float()  # Uncomment for hard gate at eval
-    #     gate = StraightThroughFloat.apply(gate) 
-
-    #     clamped_gate = F.hardtanh(gate, min_val=0.0, max_val=1.0)
-
-    #     if (torch.isnan(clamped_gate).sum() > 0):
-    #         raise ValueError("Nan")   
-
-    #     return clamped_gate
+        self.gates = gates
 
     def clamp_params(self):
         """Clamp log_alphas to prevent extreme values."""
@@ -484,11 +423,8 @@ class LatentDecoderRes(LatentDecoder):
         weight = StraightThrough.apply(weight)
         # if weight.sum() == 0:
         #     raise ValueError("Nan") 
-
-        # gate = self.sample_gate_Gumbel_Softmax(stochastic=False)
-        # self.gate = gate # used outside of module
-
-        # weight = weight * gate.unsqueeze(-1)
+        if self.gates is not None:
+            weight = weight * self.gates.view(-1, 1)
 
         if self.mask is not None:
             # Handle partially frozen decoder
@@ -532,19 +468,22 @@ class LatentDecoderRes(LatentDecoder):
 
     def cdf(self, x):
         """Cumulative distribution function for concrete distribution."""
+        # Safely convert scalar/numpy inputs to tensor on the correct device
+        if not torch.is_tensor(x):
+            # try to pick a sensible device/dtype from available attributes
+            device = getattr(self, 'log_alphas', None).device if hasattr(self, 'log_alphas') else (getattr(self, 'decoded_att', None).device if hasattr(self, 'decoded_att') else torch.device('cpu'))
+            dtype = getattr(self, 'log_alphas', None).dtype if hasattr(self, 'log_alphas') else torch.float32
+            x = torch.tensor(x, device=device, dtype=dtype)
+        else:
+            # move to consistent device/dtype
+            if hasattr(self, 'log_alphas'):
+                x = x.to(device=self.log_alphas.device, dtype=self.log_alphas.dtype)
+
         xstretch = (x - self.gamma) / (self.eta - self.gamma)
-        logits = math.log(xstretch) - math.log(1 - xstretch) # log(-gamma/eta) for x=0
+        xstretch = torch.clamp(xstretch, min=epsilon, max=1 - epsilon)
+        logits = torch.log(xstretch) - torch.log(1 - xstretch) # log(-gamma/eta) for x=0
         probs = torch.sigmoid(logits * self.temp - self.log_alphas)
         return probs.clamp(min=epsilon, max=1-epsilon)
-
-    def reg_loss(self, x):
-        """Compute L2 regularization loss."""
-        assert x.shape[0] == self.num_gates
-        lambda_net = torch.mean((0.5*self.lambda_l2 * x.pow(2)) + self.lambda_l0, dim=1)
-        net_reg_loss = torch.mean((1 - self.cdf(0)) * lambda_net)
-        with torch.no_grad():
-             net_reg_loss[torch.isnan(net_reg_loss)] = 0.0
-        return net_reg_loss
 
 
 class DecoderIdentity(Module):
@@ -676,7 +615,7 @@ class Gate(Module):
     
     def __init__(self, num_gates, gamma=-0.1, eta=1.1, lr = 1.0e-4, temp=0.5,
                  lambda_l2=0.0, lambda_l0=1.0, iter_noise=20, device='cuda', 
-                 init_probs=None):
+                 init_probs=None, inverse_indices=None):
         super(Gate, self).__init__()
         
         # Learnable gate parameters (log odds)
@@ -704,6 +643,10 @@ class Gate(Module):
             self.reset_params(init_probs)
         self.optimizer = torch.optim.Adam([self.log_alphas], lr= self.lr, eps=1.0e-15)
 
+        self.inverse_indices = inverse_indices
+        self.gate = None                # Placeholder for sampled gate values
+        self.structural_gate = None     # Placeholder for structural gate values
+
     def reset_params(self, init_probs=None):
         """Reset gate parameters, optionally with initialization probabilities."""
         if init_probs is not None:
@@ -711,10 +654,11 @@ class Gate(Module):
             assert init_probs.shape[0] == self.log_alphas.shape[0]
             init_probs = torch.clamp(init_probs,epsilon,1-epsilon)
             # Convert probabilities to log odds with temperature scaling
-            self.log_alphas.data = torch.log(init_probs/(1-init_probs))+\
-                                    self.temp*math.log(-self.gamma/self.eta)
+            self.log_alphas.data = torch.log(init_probs/(1-init_probs))+ self.temp*math.log(-self.gamma/self.eta)               # hard concrete init
+            # self.log_alphas.data = torch.log(init_probs/(1-init_probs))                                                       # binary concrete init
             self.clamp_params()
-            gate = self.sample_gate(stochastic=False)
+            gate = self.sample_gate(stochastic=False)                                                                           # hard concrete init
+            # gate = self.sample_gate_Gumbel_Softmax(stochastic=True)                                                           # binary concrete init
             self.gate = gate # used outside of module
         else:
             self.log_alphas.data *= 0
@@ -802,17 +746,43 @@ class Gate(Module):
         self.log_alphas.data.clamp_(min=math.log(1e-3), max=math.log(1e3))
 
     def cdf(self, x):
-        """Cumulative distribution function for concrete distribution."""
+        """Cumulative distribution function for nard concrete distribution."""
+        # Ensure x is a tensor on the same device/dtype as log_alphas
+        if not torch.is_tensor(x):
+            x = torch.tensor(x, device=self.log_alphas.device, dtype=self.log_alphas.dtype)
+        else:
+            x = x.to(device=self.log_alphas.device, dtype=self.log_alphas.dtype)
         xstretch = (x - self.gamma) / (self.eta - self.gamma)
-        logits = math.log(xstretch) - math.log(1 - xstretch) # log(-gamma/eta) for x=0
+        xstretch = torch.clamp(xstretch, min=epsilon, max=1 - epsilon)
+        logits = torch.log(xstretch) - torch.log(1 - xstretch) # log(-gamma/eta) for x=0
         probs = torch.sigmoid(logits * self.temp - self.log_alphas)
         return probs.clamp(min=epsilon, max=1-epsilon)
+    
+    def cdf_binary_concrete(self, x):
+        """
+        Cumulative distribution function for the standard Binary Concrete (Gumbel-Softmax) distribution.
+        Computes P(gate <= x), where the gate is in (0, 1).
+        
+        For binary gates, the most important queries are:
+            cdf(0): Probability that the gate is exactly 0 (or effectively 0 after hardening).
+            cdf(1): Always 1.0 by definition.
+        """
+        # Accept scalar/numpy or tensor input; convert to tensor matching log_alphas
+        if not torch.is_tensor(x):
+            x = torch.tensor(x, device=self.log_alphas.device, dtype=self.log_alphas.dtype)
+        else:
+            x = x.to(device=self.log_alphas.device, dtype=self.log_alphas.dtype)
+        x = torch.clamp(x, min=epsilon, max=1 - epsilon)
+        logit_x = torch.log(x) - torch.log(1 - x)
+        probs = torch.sigmoid(logit_x * self.temp - self.log_alphas)
+        return probs
 
     def reg_loss(self, x):
         """Compute L2 regularization loss."""
-        assert x.shape[0] == self.num_gates
+        # assert x.shape[0] == self.num_gates
         lambda_net = torch.mean((0.5*self.lambda_l2 * x.pow(2)) + self.lambda_l0, dim=1)
-        net_reg_loss = torch.mean((1 - self.cdf(0)) * lambda_net)
+        # net_reg_loss = torch.mean((1 - self.cdf_binary_concrete(0.05)[self.inverse_indices]) * lambda_net)    # using binary concrete CDF
+        net_reg_loss = torch.mean((1 - self.cdf(0)[self.inverse_indices]) * lambda_net)                         # using hard concrete CDF
         with torch.no_grad():
              net_reg_loss[torch.isnan(net_reg_loss)] = 0.0
         return net_reg_loss
@@ -840,7 +810,8 @@ class Gate(Module):
             # Deterministic sampling for evaluation
             gate = torch.sigmoid(self.log_alphas/self.temp)*(self.eta-self.gamma)+self.gamma
         
-        gate = torch.where(torch.isnan(gate), torch.zeros_like(gate), gate)
+        if torch.isnan(gate).any():
+            gate = torch.nan_to_num(gate, nan=0.0) 
 
         clamped_gate = F.hardtanh(gate, min_val=0.0, max_val=1.0)
 
@@ -864,11 +835,13 @@ class Gate(Module):
             # Deterministic (mean) gate
             gate = torch.sigmoid(self.log_alphas / self.temp)
         
-        gate = torch.where(torch.isnan(gate), torch.zeros_like(gate), gate)
+        if torch.isnan(gate).any():
+            gate = torch.nan_to_num(gate, nan=0.0) 
 
         # Optionally harden gate for inference (0/1)
         # gate = (gate > torch.quantile(gate, 0.95) ).float()  # Uncomment for hard gate at eval
         gate = StraightThroughFloat.apply(gate) 
+        # gate = StraightThrough.apply(gate) 
 
         clamped_gate = F.hardtanh(gate, min_val=0.0, max_val=1.0)
 
@@ -877,29 +850,29 @@ class Gate(Module):
 
         return clamped_gate
 
-    def forward(self, x, stochastic=False):
+    def forward(self, x, stochastic=False):                             # True: binary_concrete; False: deterministic
         """Apply gating to input tensor x."""
-        gate = self.sample_gate(stochastic=stochastic)
-        # gate = self.sample_gate_Gumbel_Softmax(stochastic=stochastic)
-        self.gate = gate # used outside of module
+        # gate = self.sample_gate(stochastic=stochastic)
+        gate = self.sample_gate_Gumbel_Softmax(stochastic=stochastic)
+        self.structural_gate = gate                                     # used outside of module
+        gate = gate.index_select(0, self.inverse_indices)
+        self.gate = gate                                                # used outside of module
         
-        x = torch.where(torch.isnan(x), torch.zeros_like(x), x)
+        if torch.isnan(x).any():
+            x = torch.nan_to_num(x, nan=0.0) 
 
-        if x.dim() == 2:
-            out = x*gate.unsqueeze(-1)
-        elif x.dim() == 3:
-            out = x*gate.unsqueeze(-1).unsqueeze(-1)
-        else:
-            raise Exception("Dimension should be 2 or 3 for gate input!")
+        gate_shape = [gate.shape[0]] + [1] * (x.dim() - 1)
+        gate_broadcast = gate.view(*gate_shape)
+        out = x * gate_broadcast
         
-        if (torch.isnan(out).sum() > 0):
-            raise ValueError("Nan")                 # gate初始化对训练稳定性极其重要.防止out(self.log_alphas)出现Nan值的一种方法是
-                                                    # 调高alphamask的阈值 (see train.py, line 311) -----> alphamask = (render_pkg["alpha"]>0.9).float()
+        if out.isnan().any():
+            raise ValueError("Nan")             
+                                                
         return out
 
     def forward_eval(self, x):
         """Apply deterministic gating for evaluation."""
-        gate = self.sample_gate(stochastic=False)
+        gate = self.sample_gate_Gumbel_Softmax(stochastic=False)
         out = x*gate.unsqueeze(-1)
         return out
     
@@ -912,6 +885,14 @@ class Gate(Module):
     def get_gating_pattern(self):
         """Get current gating pattern for compression."""
         return {'active_mask': (self.gate!=0.0).detach().cpu().numpy(), 'active_values': self.gate.detach().cpu().numpy()}
+    
+    def get_gates(self):
+        """Get current gates for compression."""
+        return self.gate
+    
+    def get_structural_gates(self):
+        """Get current gates for compression."""
+        return self.structural_gate
 
     def copy(self):
         """Create a deep copy of the Gate instance."""

@@ -3,21 +3,21 @@ DATA_ROOT_DIR="/media/vincent/HDD-01/S2GS/data"
 DATA_OUTPUT_DIR="/media/vincent/HDD-01/S2GS/output"
 
 DATASETS=(
-    immersive
+    sports
     )
 
 SCENES=(
-    # flames
-    exhibit
-    # truck
-    # welder
-    # facepaint1
-    # cave
+    basketball
+    # boxes
+    # football
+    # juggle
+    # softball
+    # tennis
     )
 
 RESOLUTION=(
-            # 1
-            2
+            1
+            # 2
             # 4
             # 8
             )
@@ -28,35 +28,40 @@ for SCENE in "${SCENES[@]}"; do
     SCENE_PATH=${DATA_ROOT_DIR}/${DATASETS}/${SCENE}
     OUTPUT_PATH=${DATA_OUTPUT_DIR}/${DATASETS}/${SCENE}
 
-    CMD_2="python ./scripts/pre_immersive/video.py \
+    CMD_1="python ./scripts/pre_sports/image.py \
+    --src ${SCENE_PATH} \
+    --dst ${SCENE_PATH} \
+    "
+
+    CMD_2="python ./scripts/pre_sports/video.py \
     --source ${SCENE_PATH} \
     --target ${SCENE_PATH} \
     "
 
-    CMD_3="python ./scripts/pre_immersive/convert.py \
+    CMD_3="python ./scripts/pre_sports/convert.py \
     -s ${SCENE_PATH}/frame000001 \
     "
 
     # ----- (2) Processing Data from 3DGStream to Queen -----
-    CMD_4="python ./scripts/pre_immersive/downsample_point.py \
+    CMD_4="python ./scripts/pre_sports/downsample_point.py \
     ${SCENE_PATH}/frame000001/fused.ply \
     ${SCENE_PATH}/points3D_downsample2.ply \
     "
 
-    CMD_5="python ./scripts/pre_immersive/copy_cams.py \
+    CMD_5="python ./scripts/pre_sports/copy_cams.py \
     --source ${SCENE_PATH}/frame000001 \
     --scene ${SCENE_PATH} \
     "
 
-    CMD_6="python ./scripts/pre_immersive/convert_frames.py \
+    CMD_6="python ./scripts/pre_sports/convert_frames.py \
     -s ${SCENE_PATH} \
     "
 
-    CMD_7="python ./scripts/pre_immersive/DataFrom3DGStreamToQueen.py \
+    CMD_7="python ./scripts/pre_sports/DataFrom3DGStreamToQueen.py \
     -s ${SCENE_PATH} \
     "
 
-    CMD_8="python ./scripts/pre_immersive/imgs2poses.py \
+    CMD_8="python ./scripts/pre_sports/imgs2poses.py \
     --scenedir ${SCENE_PATH}/frame000001 \
     --outdir ${SCENE_PATH} \
     "
@@ -77,6 +82,7 @@ for SCENE in "${SCENES[@]}"; do
     "
 
     echo "========= ${SCENE}: XXX   ========="
+    # eval $CMD_1
     # eval $CMD_2
     eval $CMD_3
     # eval $CMD_4

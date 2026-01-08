@@ -395,18 +395,22 @@ class GaussianModel:
 
         if self.visible_threshold < 0:
             self.visible_threshold = 0.0
-            self.positions, self._level, self.visible_threshold, _ = self.weed_out(self.positions, self._level)
-        self.positions, self._level, _, weed_mask = self.weed_out(self.positions, self._level)
+            self.positions, self._level, self.visible_threshold, _, self.root_indices = self.weed_out(self.positions, self._level, self.root_indices)
+        self.positions, self._level, _, weed_mask, self.root_indices= self.weed_out(self.positions, self._level, self.root_indices)
         self.colors = self.colors[weed_mask]
 
-        print(f'Branches of Tree: {self.fork}')
-        print(f'Base Layer of Tree: {self.base_layer}')
-        print(f'Visible Threshold: {self.visible_threshold}')
-        print(f'LOD Levels: {self.levels}')
-        print(f'Initial Levels: {self.init_level}')
-        print(f'Initial Voxel Number: {self.positions.shape[0]}')
-        print(f'Min Voxel Size: {self.voxel_size/(2.0 ** (self.levels - 1))}')
-        print(f'Max Voxel Size: {self.voxel_size}')
+        PINK = '\033[1;95m'      # 亮洋红色（通常显示为粉色）
+        RESET = '\033[0m'
+
+        print(f'{PINK}Branches of Tree: {self.fork}{RESET}')
+        print(f'{PINK}Base Layer of Tree: {self.base_layer}{RESET}')
+        print(f'{PINK}Visible Threshold: {self.visible_threshold}{RESET}')
+        print(f'{PINK}LOD Levels: {self.levels}{RESET}')
+        print(f'{PINK}Initial Levels: {self.init_level}{RESET}')
+        print(f'{PINK}Initial Voxel Number: {self.positions.shape[0]}{RESET}')
+        print(f'{PINK}Min Voxel Size: {self.voxel_size/(2.0 ** (self.levels - 1))}{RESET}')
+        print(f'{PINK}Max Voxel Size: {self.voxel_size}{RESET}')
+        print(f'{PINK}Unique Base Voxels: {len(torch.unique(self.root_indices))}{RESET}')
 
         fused_point_cloud, fused_color = self.positions, RGB2SH(self.colors)
         offsets = torch.zeros((fused_point_cloud.shape[0], 3)).float().cuda()
@@ -481,144 +485,6 @@ class GaussianModel:
         self.mask_scaling.data = torch.ones_like(self._opacity).bool()
         self.mask_rotation.data = torch.ones_like(self._opacity).bool()
         self.mask_opacity.data = torch.ones_like(self._opacity).bool()
-
-
-    # def create_from_depth(self, cameras, spatial_lr_scale, downsample_scale=2, alpha_thresh=0.1, renderFunc=None):
-    #     self.spatial_lr_scale = spatial_lr_scale
-
-    #     _,orig_H,orig_W = cameras[0].original_image.shape
-    #     downsample_size = (int(orig_H/downsample_scale),int(orig_W/downsample_scale))
-    #     H,W = downsample_size
-    #     xyz = coords_grid(1,H,W, device='cuda')[0].permute(1,2,0).view(-1,2)
-    #     xyz = torch.cat((xyz,torch.zeros_like(xyz[:,0:1]),torch.ones_like(xyz[:,0:1])),dim=-1) # N x 4
-    #     xyz[:,0] = xyz[:,0]/(0.5*W)+(1/W-1)
-    #     xyz[:,1] = xyz[:,1]/(0.5*H)+(1/H-1)
-    #     fused_point_cloud, fused_color = None, None
-    #     world_xyz_colmap = torch.cat((self._offset,torch.ones_like(self._offset[:,0:1])),dim=1)
-    #     net_points = 0
-    #     for idx in range(len(cameras)):
-    #         camera = cameras[idx]
-
-    #         #################################################### Colmap coords ####################################################
-            
-    #         with torch.no_grad():*self.n_offsets
-    #             world_xyz_colmap = torch.cat((self._offset,torch.ones_like(self._offset[:,0:1])),dim=1)
-    #             cam_xyz_colmap = torch.matmul(camera.world_view_transform.T.unsqueeze(0),world_xyz_colmap.unsqueeze(-1)).squeeze(-1)
-    #             cam_hom_colmap = torch.matmul(camera.projection_matrix.T.unsqueeze(0),cam_xyz_colmap.unsqueeze(-1)).squeeze(-1)
-    #             cam_proj_colmap = cam_hom_colmap[:,:3]/cam_hom_colmap[:,3:]
-
-    #             in_frustum = torch.logical_and(torch.all(cam_proj_colmap<1,dim=1),torch.all(cam_proj_colmap>-1,dim=1))
-    #             in_frustum_depth = torch.logical_and(cam_proj_colmap[:,2]>0,cam_proj_colmap[:,2]<=1.0)
-
-    #             cam_proj_colmap_filtered = cam_proj_colmap[in_frustum*in_frustum_depth]
-    #             cam_xyz_colmap_filtered = cam_xyz_colmap[in_frustum*in_frustum_depth]
-    #             world_xyz_colmap_filtered = world_xyz_colmap[in_frustum*in_frustum_depth]
-
-
-    #         ######################################### Scaling values for inverse depth #############################################
-
-    #         with torch.no_grad():
-    #             image, depth = camera.original_image, camera.gt_depth # Actually inverse_depth for midas
-
-    #             # Grid sample expects a  N x H x W x 2 grid for some reason. Create an array with first N values populated and reshape
-    #             grid = torch.zeros(1,H,W,2).reshape(-1,2)
-    #             grid[:cam_proj_colmap_filtered.shape[0]] = cam_proj_colmap_filtered[:,:2]
-
-    #             # Sample from network produced inverse depth at those coordinates
-    #             img = F.grid_sample(depth.unsqueeze(0).unsqueeze(0), grid.to(depth).reshape(1,H,W,2), mode='bilinear', padding_mode='zeros', align_corners=True)
-    #             # Use only the coordinates at populated grid locations
-    #             inverse_depths = img.reshape(-1,1)[:cam_proj_colmap_filtered.shape[0]]
-
-    #             new_img = torch.zeros_like(depth)
-    #             img_coords = torch.floor((grid[:cam_proj_colmap_filtered.shape[0]]+1)*0.5*torch.tensor([W,H]).to(grid).unsqueeze(0)).long()
-    #             new_img[img_coords[:,1],img_coords[:,0]] = inverse_depths.flatten()
-
-    #             B = cam_proj_colmap_filtered[:,2] # Get the z projected coordinates from the colmap as the GT depth
-    #             B = (1 - B*(camera.zfar-camera.znear)/camera.zfar)/camera.znear
-    #             A = torch.cat((inverse_depths,torch.ones_like(inverse_depths)),dim=1)
-    #             out = torch.linalg.lstsq(A,B)
-                
-    #             pred_depth = 1/(A[:,0]*out.solution[0] + out.solution[1])
-    #             gt_depth = 1/B
-
-    #         ###################################### Subsample and index locations for depth #############################################
-
-    #         with torch.no_grad():
-    #             Zc = 1/(depth*out.solution[0]+out.solution[1]).view(-1,1)
-    #             Xc = Zc*math.tan((camera.FoVx/2))*xyz[:,0:1]
-    #             Yc = Zc*math.tan((camera.FoVy/2))*xyz[:,1:2]
-    #             cam_xyz = torch.cat((Xc, Yc, Zc, torch.ones_like(Xc)),dim=1)
-    #             world_xyz = torch.matmul(torch.linalg.inv(camera.world_view_transform.T).unsqueeze(0),cam_xyz.unsqueeze(-1)).squeeze(-1)[:,:3]
-
-    #             cam_hom= torch.matmul(camera.projection_matrix.T.unsqueeze(0),cam_xyz.unsqueeze(-1)).squeeze(-1)
-    #             depth = cam_hom[:,2]/cam_hom[:,3]
-    #             camera.gt_depth = depth.reshape(orig_H, orig_W)
-
-    #             render_pkg = renderFunc(viewpoint_camera=camera,pc=self)
-    #             _, alpha = render_pkg["depth"], render_pkg["alpha"]
-    #             alpha = F.interpolate(alpha.unsqueeze(0), size=downsample_size, mode='bilinear',
-    #                                     align_corners=True)[0]
-    #             alpha_mask = (alpha<alpha_thresh).reshape(-1) # 1 implies we add points from our GT depth, 0 implies neighborhood points already exist from colmap
-    #             if alpha_mask.sum()==0:
-    #                 continue
-    #             assert alpha_mask.sum()!=alpha_mask.numel()
-
-    #         # New points to add in empty regions
-    #         num_new = alpha_mask.sum()/(~alpha_mask).numel()*((in_frustum*in_frustum_depth).sum())
-    #         if num_new == 0:
-    #             continue
-
-    #         world_xyz_new = world_xyz[alpha_mask] # Only points corresponding to new areas without colmap init
-
-    #         indices = torch.randperm(world_xyz_new.shape[0])[:num_new.long()]
-    #         world_xyz_subsampled = world_xyz_new[indices]
-    #         net_points += world_xyz_subsampled.shape[0]
-
-    #         ################################################### Color #########################################################
-
-    #         image_new = image.permute(1,2,0).view(-1,3)[alpha_mask,:] # Get corresponding pixels at the new areas
-    #         image_subsampled = image_new[indices]
-
-    #         color = RGB2SH(image_subsampled)
-    #         features = torch.zeros((color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
-    #         features[:, :3, 0 ] = color
-    #         features[:, 3:, 1:] = 0.0
-
-    #         if fused_point_cloud is None :
-    #             fused_point_cloud = world_xyz_subsampled
-    #             fused_color = features
-    #         else:
-    #             fused_point_cloud = torch.cat((fused_point_cloud,world_xyz_subsampled))
-    #             fused_color = torch.cat((fused_color,features))
-
-    #     if fused_color is None:
-    #         return
-            
-    #     dist2 = torch.clamp_min(distCUDA2(fused_point_cloud), 0.0000001)
-    #     scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
-    #     rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
-    #     rots[:, 0] = 1
-
-    #     opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
-
-    #     new_xyz = self.latent_decoders["xyz"].invert(fused_point_cloud)
-    #     if isinstance(self.latent_decoders["f_dc"],DecoderIdentity):
-    #         new_features_dc = fused_color[:,:,0:1].transpose(1, 2).contiguous()
-    #     else:
-    #         new_features_dc = self.latent_decoders["f_dc"].invert(fused_color[:,:,0].contiguous().cuda())
-    #     if isinstance(self.latent_decoders["f_rest"],DecoderIdentity):
-    #         new_features_rest = fused_color[:,:,1:].transpose(1, 2).contiguous()
-    #     else:
-    #         new_features_rest = torch.zeros((fused_color.size(0),self.latent_decoders["f_rest"].latent_dim)).to(fused_color).contiguous()
-
-    #     new_scaling = self.latent_decoders["sc"].invert(scales)
-    #     new_rotation = self.latent_decoders["rot"].invert(rots)
-    #     new_opacity = self.latent_decoders["op"].invert(opacities)
-    #     new_flow = torch.zeros_like(fused_point_cloud)
-
-    #     self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_flow)
-
-    #     print("\nAdded {} points!".format(net_points))
 
     def create_from_depth_immersive(self, cameras, spatial_lr_scale, downsample_scale=2, alpha_thresh=0.1, renderFunc=None):
         self.spatial_lr_scale = spatial_lr_scale
@@ -781,6 +647,10 @@ class GaussianModel:
                 ldec_size += self.latent_decoders[param_name].size()
                 decoder = self.latent_decoders[param_name]
                 
+                if self.gate_atts is not None:
+                    gate = self.gate_atts.get_gates()
+                    mask = (gate!=0.0).sum().item()/gate.numel()
+
                 # Calculate latent storage size based on decoder type
                 if isinstance(decoder, DecoderIdentity) \
                     or (type(decoder)==LatentDecoderRes and decoder.identity):
@@ -796,9 +666,7 @@ class GaussianModel:
                     # Apply gating compression if enabled
                     if self.gate_atts is not None and self.gate_params[param_name]:
                         assert frz[param_name] == "none"
-                        gate = self.gate_atts.sample_gate_Gumbel_Softmax(stochastic=False)
-                        mask_frac = (gate!=0.0).sum().item()/gate.numel()
-
+                        mask_frac = mask
                     latents_size += p.numel()*torch.finfo(p.dtype).bits*mask_frac
                 else:
                     if frz[param_name] == "all":
@@ -820,7 +688,7 @@ class GaussianModel:
                         if prev_att is not None:
                             weight = (torch.round(self._latents[param_name][:,dim])-prev_att[:,dim]).long()
                         else:
-                            weight = torch.round(self._latents[param_name][:,dim]).long()
+                            weight = torch.round(self._latents[param_name][:,dim]).long() 
                         if frz[param_name] == "st":
                             weight = weight[mask]
                         
@@ -948,6 +816,8 @@ class GaussianModel:
         
         # Initialize parent mapping for tracking Gaussian relationships
         self.offset_before = self.get_offset.clone()
+        if self.gate_atts is not None:
+            self.gate_before = self.gate_atts.get_gates().clone()
         self.mapping =  torch.arange(self.offset_before.shape[0], device="cuda")
         
         for i, att_name in enumerate(atts):
@@ -968,19 +838,14 @@ class GaussianModel:
                         use_shift=self.latent_args.use_shift[i],
                         ldec_std=self.latent_args.ldec_std[i],
                         final_activation=self.latent_args.final_activation[i],
-                        num_gates = self._offset.shape[0],
-                        temp=dataset.gate_temp,
-                        gamma=dataset.gate_gamma,
-                        eta=dataset.gate_eta,
-                        lambda_l2=dataset.gate_lambda_l2, 
-                        lambda_l0=dataset.gate_lambda_l0, 
-                        init_probs=self.init_probs
+                        gates = self.gate_before if self.gate_atts is not None else None,
                     ).cuda()
                     self.latent_decoders[att_name] = decoder
                 else:
                     # Verify residual decoder type for subsequent frames
                     decoder = self.latent_decoders[att_name]
                     assert isinstance(self.latent_decoders[att_name], LatentDecoderRes)
+                    decoder.gates = self.gate_before if self.gate_atts is not None else None
 
                 self.latent_decoders[att_name].frame_idx = self.frame_idx
 
@@ -1630,6 +1495,10 @@ class GaussianModel:
     @property
     def get_level(self):
         return self._level    
+
+    @property
+    def get_root_indices(self):
+        return self.root_indices    
     
     def set_level(self, points, cameras, scales):
         all_dist = torch.tensor([]).cuda()
@@ -1658,11 +1527,37 @@ class GaussianModel:
         torch.cuda.synchronize(); t0 = time.time()
         self.positions = torch.empty(0, 3).float().cuda()
         self.colors = torch.empty(0, 3).float().cuda()
-        self._level = torch.empty(0).int().cuda() 
+        self._level = torch.empty(0).int().cuda()
+        self.root_indices = torch.empty(0).long().cuda()    # 用于存储每个体素对应的第一层体素索引
+        self.root_coord_to_idx = {}                         # 创建快速查找字典（只在CPU，用于建立映射）
+
         for cur_level in range(self.levels):
-            cur_size = self.voxel_size/(float(self.fork) ** cur_level)          # 计算当前层级的体素大小
-            new_candidates = torch.round((points - self.init_pos) / cur_size)   # 将点坐标归一化到以init_pos为原点的坐标系，并将坐标转换为体素索引。 
+            cur_size = self.voxel_size/(float(self.fork) ** cur_level)                  # 计算当前层级的体素大小
+            new_candidates = torch.floor((points - self.init_pos) / cur_size).int()     # 将点坐标归一化到以init_pos为原点的坐标系，并将坐标转换为体素索引。 
             new_candidates_unique, inverse_indices = torch.unique(new_candidates, return_inverse=True, dim=0)   # 找到所有唯一的体素索引，并记录每个原始点对应到唯一体素的映射关系
+            # 关键优化：在第一层建立坐标到索引的映射
+            if cur_level == 0:
+                # 第一层直接使用体素坐标作为唯一标识
+                root_voxel_coords = new_candidates_unique
+                # 为每个第一层体素分配唯一索引 (0, 1, 2, ...)
+                root_indices = torch.arange(root_voxel_coords.shape[0], device=new_candidates_unique.device)
+                for idx, coord in enumerate(root_voxel_coords.cpu()):
+                    self.root_coord_to_idx[tuple(coord.numpy())] = idx
+                # 当前层级的根层索引就是自身
+                current_root_indices = root_indices
+            else:
+                # 对于更深层级：将当前坐标转换到第一层坐标系
+                root_scale_factor = float(self.fork) ** cur_level  # 当前层到根层的缩放因子
+                root_coords = torch.floor(new_candidates_unique / root_scale_factor).int()
+                # 批量查找根层索引（避免循环）
+                current_root_indices = torch.zeros(new_candidates_unique.shape[0], 
+                                                dtype=torch.long, device=new_candidates_unique.device)
+                # 使用向量化操作（比循环快得多）
+                root_coords_cpu = root_coords.cpu()
+                for i, coord in enumerate(root_coords_cpu):
+                    coord_tuple = tuple(coord.numpy())
+                    current_root_indices[i] = self.root_coord_to_idx.get(coord_tuple, -1)            
+            
             new_positions = new_candidates_unique * cur_size + self.init_pos    # 将体素索引转换回实际坐标
             new_positions += self.padding * cur_size                            # 添加padding偏移  
             new_levels = torch.ones(new_positions.shape[0], dtype=torch.int, device="cuda") * cur_level         # 为每个新体素标记当前层级
@@ -1670,11 +1565,13 @@ class GaussianModel:
             self.positions = torch.concat((self.positions, new_positions), dim=0)
             self.colors = torch.concat((self.colors, new_colors), dim=0)
             self._level = torch.concat((self._level, new_levels), dim=0)
+            self.root_indices = torch.cat((self.root_indices, current_root_indices), dim=0)                     # 保存根层索引到对象中 
+
         torch.cuda.synchronize(); t1 = time.time()
         time_diff = t1 - t0
         print(f"Building octree time: {int(time_diff // 60)} min {time_diff % 60} sec")
 
-    def weed_out(self, gaussian_positions, gaussian_levels):
+    def weed_out(self, gaussian_positions, gaussian_levels, root_indices):
         visible_count = torch.zeros(gaussian_positions.shape[0], dtype=torch.int, device="cuda")    # 为每个高斯元素创建一个计数器，记录它在多少个相机视角下"需要被渲染"。
         for cam in self.cam_infos:
             cam_center, scale = cam[:3], cam[3]
@@ -1686,7 +1583,7 @@ class GaussianModel:
         visible_count = visible_count/len(self.cam_infos)                   # 将计数转换为比例（在多少比例的视角下需要渲染）
         weed_mask = (visible_count > self.visible_threshold)                # 创建筛选掩码：只有可见比例超过阈值的高斯元素被保留
         mean_visible = torch.mean(visible_count)
-        return gaussian_positions[weed_mask], gaussian_levels[weed_mask], mean_visible, weed_mask
+        return gaussian_positions[weed_mask], gaussian_levels[weed_mask], mean_visible, weed_mask, root_indices[weed_mask]
 
     def map_to_int_level(self, pred_level, cur_level):
         if self.dist2level=='floor':
@@ -1788,8 +1685,6 @@ class GaussianModel:
 
         return xyz, color, opacity, scaling, rotation, mask
     
-
-    
     def run_densify(self, iteration, opt):
         # adding anchors
         grads = self.offset_gradient_accum / self.offset_denom # [N*k, 1], 计算每个offset的梯度范数，识别训练充分的点
@@ -1883,17 +1778,17 @@ class GaussianModel:
                 self._extra_level += extra_up * candidate_extra_mask.float()    
             # 坐标转换与体素化: 计算所有点的世界坐标; 体素坐标转换, 将连续坐标离散化为网格坐标; 选择候选点坐标
             all_xyz = self.get_anchor + self.get_offset * self.get_scaling[:,:3]
-
-            grid_coords = torch.round((self.get_anchor[level_mask]-self.init_pos)/cur_size - self.padding).int()
+            grid_coords = torch.floor((self.get_anchor[level_mask]-self.init_pos)/cur_size - self.padding).int()
             selected_xyz = all_xyz.view([-1, 3])[candidate_mask]
-            selected_grid_coords = torch.round((selected_xyz-self.init_pos)/cur_size - self.padding).int()
+            selected_grid_coords = torch.floor((selected_xyz-self.init_pos)/cur_size - self.padding).int()
             # 去重处理: 查找唯一网格位置, 避免在同一位置重复添加点; 重叠检测, 检查新点是否与现有点冲突; 杂草剔除, 移除不合适的新点
             selected_grid_coords_unique, inverse_indices = torch.unique(selected_grid_coords, return_inverse=True, dim=0)
             if overlap:
                 remove_duplicates = torch.ones(selected_grid_coords_unique.shape[0], dtype=torch.bool, device="cuda")
                 candidate_anchor = selected_grid_coords_unique[remove_duplicates] * cur_size + self.init_pos + self.padding * cur_size
                 new_level = torch.ones(candidate_anchor.shape[0], dtype=torch.int, device='cuda') * cur_level
-                candidate_anchor, new_level, _, weed_mask = self.weed_out(candidate_anchor, new_level)
+                new_indices = scatter_max(self.get_root_indices[candidate_mask], inverse_indices, dim=0)[0][remove_duplicates]
+                candidate_anchor, new_level, _, weed_mask, new_indices = self.weed_out(candidate_anchor, new_level, new_indices)
                 remove_duplicates_clone = remove_duplicates.clone()
                 remove_duplicates[remove_duplicates_clone] = weed_mask
             elif selected_grid_coords_unique.shape[0] > 0 and grid_coords.shape[0] > 0:
@@ -1901,24 +1796,27 @@ class GaussianModel:
                 remove_duplicates = ~remove_duplicates
                 candidate_anchor = selected_grid_coords_unique[remove_duplicates]*cur_size + self.init_pos + self.padding * cur_size
                 new_level = torch.ones(candidate_anchor.shape[0], dtype=torch.int, device='cuda') * cur_level
-                candidate_anchor, new_level, _, weed_mask = self.weed_out(candidate_anchor, new_level)
+                new_indices = scatter_max(self.get_root_indices[candidate_mask], inverse_indices, dim=0)[0][remove_duplicates]
+                candidate_anchor, new_level, _, weed_mask, new_indices = self.weed_out(candidate_anchor, new_level, new_indices)
                 remove_duplicates_clone = remove_duplicates.clone()
                 remove_duplicates[remove_duplicates_clone] = weed_mask
             else:
                 candidate_anchor = torch.zeros([0, 3], dtype=torch.float, device='cuda')
                 remove_duplicates = torch.zeros(selected_grid_coords_unique.shape[0], dtype=torch.bool, device='cuda')
                 new_level = torch.zeros([0], dtype=torch.int, device='cuda')
+                new_indices = torch.zeros([0], dtype=torch.long, device='cuda')
             # 选择下一层级候选点坐标，并做去重处理
-            grid_coords_ds = torch.round((self.get_anchor[level_ds_mask]-self.init_pos)/ds_size-self.padding).int()
+            grid_coords_ds = torch.floor((self.get_anchor[level_ds_mask]-self.init_pos)/ds_size-self.padding).int()
             selected_xyz_ds = all_xyz.view([-1, 3])[candidate_ds_mask]
-            selected_grid_coords_ds = torch.round((selected_xyz_ds-self.init_pos)/ds_size-self.padding).int()
+            selected_grid_coords_ds = torch.floor((selected_xyz_ds-self.init_pos)/ds_size-self.padding).int()
             selected_grid_coords_unique_ds, inverse_indices_ds = torch.unique(selected_grid_coords_ds, return_inverse=True, dim=0)
             if (~self.progressive or iteration > self.coarse_intervals[-1]) and cur_level < self.levels - 1:    # 只在渐进训练后期且非最细层级时启用
                 if overlap:
                     remove_duplicates_ds = torch.ones(selected_grid_coords_unique_ds.shape[0], dtype=torch.bool, device="cuda")
                     candidate_anchor_ds = selected_grid_coords_unique_ds[remove_duplicates_ds]*ds_size+self.init_pos+self.padding*ds_size
                     new_level_ds = torch.ones(candidate_anchor_ds.shape[0], dtype=torch.int, device='cuda') * (cur_level + 1)
-                    candidate_anchor_ds, new_level_ds, _, weed_ds_mask = self.weed_out(candidate_anchor_ds, new_level_ds)
+                    new_indices_ds = scatter_max(self.get_root_indices[candidate_ds_mask], inverse_indices_ds, dim=0)[0][remove_duplicates_ds]
+                    candidate_anchor_ds, new_level_ds, _, weed_ds_mask, new_indices_ds = self.weed_out(candidate_anchor_ds, new_level_ds, new_indices_ds)
                     remove_duplicates_ds_clone = remove_duplicates_ds.clone()
                     remove_duplicates_ds[remove_duplicates_ds_clone] = weed_ds_mask
                 elif selected_grid_coords_unique_ds.shape[0] > 0 and grid_coords_ds.shape[0] > 0:
@@ -1926,22 +1824,26 @@ class GaussianModel:
                     remove_duplicates_ds = ~remove_duplicates_ds
                     candidate_anchor_ds = selected_grid_coords_unique_ds[remove_duplicates_ds]*ds_size+self.init_pos+self.padding*ds_size
                     new_level_ds = torch.ones(candidate_anchor_ds.shape[0], dtype=torch.int, device='cuda') * (cur_level + 1)
-                    candidate_anchor_ds, new_level_ds, _, weed_ds_mask = self.weed_out(candidate_anchor_ds, new_level_ds)
+                    new_indices_ds = scatter_max(self.get_root_indices[candidate_ds_mask], inverse_indices_ds, dim=0)[0][remove_duplicates_ds]
+                    candidate_anchor_ds, new_level_ds, _, weed_ds_mask, new_indices_ds = self.weed_out(candidate_anchor_ds, new_level_ds, new_indices_ds)
                     remove_duplicates_ds_clone = remove_duplicates_ds.clone()
                     remove_duplicates_ds[remove_duplicates_ds_clone] = weed_ds_mask
                 else:
                     candidate_anchor_ds = torch.zeros([0, 3], dtype=torch.float, device='cuda')
                     remove_duplicates_ds = torch.zeros(selected_grid_coords_unique_ds.shape[0], dtype=torch.bool, device='cuda')
                     new_level_ds = torch.zeros([0], dtype=torch.int, device='cuda')
+                    new_indices_ds = torch.zeros([0], dtype=torch.long, device='cuda')
             else:
                 candidate_anchor_ds = torch.zeros([0, 3], dtype=torch.float, device='cuda')
                 remove_duplicates_ds = torch.zeros(selected_grid_coords_unique_ds.shape[0], dtype=torch.bool, device='cuda')
                 new_level_ds = torch.zeros([0], dtype=torch.int, device='cuda')
+                new_indices_ds = torch.zeros([0], dtype=torch.long, device='cuda')
             # 参数初始化
             if candidate_anchor.shape[0] + candidate_anchor_ds.shape[0] > 0:
                 
                 new_anchor = torch.cat([candidate_anchor, candidate_anchor_ds], dim=0)
                 new_level = torch.cat([new_level, new_level_ds]).unsqueeze(dim=1).float().cuda()
+                new_indices = torch.cat([new_indices, new_indices_ds]).long().cuda()
                 
                 new_features_dc_1 = self._latents["f_dc"][candidate_mask]
                 new_features_dc_1 = scatter_max(new_features_dc_1, inverse_indices.unsqueeze(1).expand(-1, new_features_dc_1.size(1)), dim=0)[0][remove_duplicates]
@@ -2006,6 +1908,7 @@ class GaussianModel:
                 self._latents["op"] = optimizable_tensors["op"]
                 self._level = torch.cat([self._level, new_level], dim=0)
                 self._extra_level = torch.cat([self._extra_level, new_extra_level], dim=0)
+                self.root_indices = torch.cat([self.root_indices, new_indices], dim=0)
 
     def prune_anchor(self, mask):
         valid_points_mask = ~mask
@@ -2021,6 +1924,7 @@ class GaussianModel:
         self._latents["rot"] = optimizable_tensors["rot"]
         self._level = self._level[valid_points_mask]
         self._extra_level = self._extra_level[valid_points_mask]
+        self.root_indices = self.root_indices[valid_points_mask]
 
         for mask_name, mask in self.get_masks.items():
             mask.data = mask[valid_points_mask]

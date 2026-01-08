@@ -10,7 +10,7 @@
 #
 # Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
-
+import time
 import torch
 import math
 import diff_gaussian_rasterization
@@ -29,9 +29,10 @@ def render(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iteration, rende
     """
     # pc.set_anchor_mask(viewpoint_camera.camera_center, iteration, pc, resolution_scale = 1.0)
     # visible_mask = prefilter_voxel(viewpoint_camera, pc, pipe, bg_color).squeeze()  # 这个预过滤过程实现了两级筛选：LOD筛选，以及radii可见性筛选
+    start = time.time()
     visible_mask = torch.ones(pc.get_anchor.shape[0], dtype=torch.bool, device = pc.get_anchor.device)
     xyz, color, opacity, scaling, rot, selection_mask = pc.generate_lod_gaussians(viewpoint_camera, visible_mask)
- 
+    
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
@@ -63,6 +64,11 @@ def render(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iteration, rende
         )
     
     viewmat = viewpoint_camera.world_view_transform.transpose(0, 1) # [4, 4]
+
+    end = time.time()
+    time_pre = end - start
+    start = time.time()
+
     if viewpoint_camera.fl_x > 0:                                           # Technicolor Dataset
         
         render_colors, render_alphas, info = gsplat.rasterization(
@@ -100,6 +106,10 @@ def render(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iteration, rende
             render_mode=render_mode,
         )
 
+    end = time.time()
+    time_ren = end - start
+    start = time.time()
+
     # [1, H, W, 3] -> [3, H, W]
     if render_colors.shape[-1] == 4:
         colors, depths = render_colors[..., 0:3], render_colors[..., 3:4]
@@ -114,6 +124,8 @@ def render(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iteration, rende
         info["means2d"].retain_grad() # [1, N, 2]
     except:
         pass
+    end = time.time()
+    time_post = end - start
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     return_dict = {
@@ -125,6 +137,9 @@ def render(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iteration, rende
         "selection_mask": selection_mask,
         "opacity": opacity,
         "render_depth": depth,
+        "time_pre": time_pre,
+        "time_ren": time_ren,
+        "time_post": time_post,
     }
     
     return return_dict
@@ -430,34 +445,61 @@ def render_from_load(viewpoint_camera, pc: GaussianModel, pipe, bg_color, render
     
     return return_dict
 
-def render_technicolor(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iteration, render_mode, ape_code=-1):
+def render_lightweight(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iteration, render_mode, gaussian_param = None, ape_code=-1):
     """
     Render the scene. 
     
     Background tensor (bg_color) must be on GPU!
     """
-    # pc.set_anchor_mask(viewpoint_camera.camera_center, iteration, pc, resolution_scale = 1.0)
-    # visible_mask = prefilter_voxel(viewpoint_camera, pc, pipe, bg_color).squeeze()  # 这个预过滤过程实现了两级筛选：LOD筛选，以及radii可见性筛选
+    start = time.time()
     visible_mask = torch.ones(pc.get_anchor.shape[0], dtype=torch.bool, device = pc.get_anchor.device)
-    xyz, color, opacity, scaling, rot, selection_mask = pc.generate_lod_gaussians(viewpoint_camera, visible_mask)
- 
+    xyz, color, opacity, scaling, rot, selection_mask = (
+        gaussian_param['xyz'],
+        gaussian_param['color'],
+        gaussian_param['opacity'],
+        gaussian_param['scaling'],
+        gaussian_param['rot'],
+        gaussian_param['selection_mask']
+    )
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
-    focal_length_x = viewpoint_camera.fl_x
-    focal_length_y = viewpoint_camera.fl_y
-    K = torch.tensor(
-        [
-            [focal_length_x, 0, viewpoint_camera.image_width / 2.0],
-            [0, focal_length_y, viewpoint_camera.image_height / 2.0],
-            [0, 0, 1],
-        ],
-        device="cuda",
-    )
+    if viewpoint_camera.fl_x > 0:                                           # Technicolor Dataset
+        focal_length_x = viewpoint_camera.fl_x
+        focal_length_y = viewpoint_camera.fl_y
+    else:
+        focal_length_x = viewpoint_camera.image_width / (2 * tanfovx)
+        focal_length_y = viewpoint_camera.image_height / (2 * tanfovy)
+    
+    if viewpoint_camera.fl_x > 0:                                           # Technicolor Dataset
+        K = torch.tensor(
+            [
+                [focal_length_x, 0, viewpoint_camera.cx],
+                [0, focal_length_y, viewpoint_camera.cy],
+                [0, 0, 1],
+            ],
+            device="cuda",
+        )
+    else:
+        K = torch.tensor(
+            [
+                [focal_length_x, 0, viewpoint_camera.image_width / 2.0],
+                [0, focal_length_y, viewpoint_camera.image_height / 2.0],
+                [0, 0, 1],
+            ],
+            device="cuda",
+        )
     
     viewmat = viewpoint_camera.world_view_transform.transpose(0, 1) # [4, 4]
-    render_colors, render_alphas, info = gsplat.rasterization(
+
+    end = time.time()
+    time_pre = end - start
+    start = time.time()
+
+    if viewpoint_camera.fl_x > 0:                                           # Technicolor Dataset
+        
+        render_colors, render_alphas, info = gsplat.rasterization(
         means=xyz,  # [N, 3]
         quats=rot,  # [N, 4]
         scales=scaling,  # [N, 3]
@@ -468,11 +510,34 @@ def render_technicolor(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iter
         backgrounds=bg_color[None],
         width=int(viewpoint_camera.image_width),
         height=int(viewpoint_camera.image_height),
+        near_plane=viewpoint_camera.znear,
+        far_plane=viewpoint_camera.zfar,
         packed=False,
         sh_degree=pc.max_sh_degree,
         render_mode=render_mode,
-    )
+        )
+    else:
+        
+        render_colors, render_alphas, info = gsplat.rasterization(
+            means=xyz,  # [N, 3]
+            quats=rot,  # [N, 4]
+            scales=scaling,  # [N, 3]
+            opacities=opacity.squeeze(-1),  # [N,]
+            colors=color,
+            viewmats=viewmat[None],  # [1, 4, 4]
+            Ks=K[None],  # [1, 3, 3]
+            backgrounds=bg_color[None],
+            width=int(viewpoint_camera.image_width),
+            height=int(viewpoint_camera.image_height),
+            packed=False,
+            sh_degree=pc.max_sh_degree,
+            render_mode=render_mode,
+        )
 
+    end = time.time()
+    time_ren = end - start
+    start = time.time()
+    
     # [1, H, W, 3] -> [3, H, W]
     if render_colors.shape[-1] == 4:
         colors, depths = render_colors[..., 0:3], render_colors[..., 3:4]
@@ -487,6 +552,8 @@ def render_technicolor(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iter
         info["means2d"].retain_grad() # [1, N, 2]
     except:
         pass
+    end = time.time()
+    time_post = end - start
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     return_dict = {
@@ -497,7 +564,10 @@ def render_technicolor(viewpoint_camera, pc: GaussianModel, pipe, bg_color, iter
         "visible_mask": visible_mask,
         "selection_mask": selection_mask,
         "opacity": opacity,
-        "render_depth": depth
+        "render_depth": depth,
+        "time_pre": time_pre,
+        "time_ren": time_ren,
+        "time_post": time_post,
     }
     
     return return_dict

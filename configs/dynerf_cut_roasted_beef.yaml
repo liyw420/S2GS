@@ -52,7 +52,7 @@ quantize_params:
     f_rest_ldec_std: 1.0e-1
 
     f_dc_quant_type: 'sq_res'
-    f_dc_latent_dim: 8
+    f_dc_latent_dim: 4
     f_dc_latent_scale_norm: 'none'
     f_dc_ldecode_matrix: 'learnable'
     f_dc_ldec_std: 1.0e-4
@@ -64,7 +64,7 @@ quantize_params:
     rot_ldec_std: 1.0e-2
 
     op_quant_type: 'sq_res'
-    op_latent_dim: 3
+    op_latent_dim: 1
     op_latent_scale_norm: 'none'
     op_ldecode_matrix: 'dft'
     op_ldec_std: 1.0e-4
@@ -165,7 +165,7 @@ opt_params_lod:
     fork: 2
     visible_threshold: 0.9
     dist2level: 'round'
-    base_layer: 11
+    base_layer: 9
     progressive: True
     extend: 1.1
     dist_ratio: 0.999
