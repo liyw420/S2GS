@@ -5,6 +5,7 @@
 <div align="center">
   <img src="assets/teaser.png"/>
 </div><br/>
+
 **This repository is the official implementation of "Sparsity Matters: Efficient On-Device Streaming of Free-Viewpoint Videos via Structured Sparse Gaussian Splatting".** In this paper, we propose S²GS, a novel on-device FVV streaming framework that integrates end-to-end learnable structured sparsity into Gaussian Splatting. Notably, compared with [QUEEN](https://github.com/NVlabs/queen), S²GS reduces Gaussian primitives by 67.6%, storage costs by 84.9%, and training time by 59.5%, while achieving 480+ FPS rendering on the N3DV dataset.
 
 ---
@@ -16,7 +17,8 @@
 <div align="center">
   <img src="assets/pipeline.png"/>
 </div><br/>
-Overview of the S²GS framework. (a) The streaming octree representation is initialized using root Gaussian primitives from the first frame and subsequently represents FVVs with multi-resolution hierarchical grids, enabling Level-of-Motion modeling and efficient point queries. (b) A learnable structured gating mechanism is introduced to sparsify Gaussian residuals via hierarchical feature propagation, differentiable sampling with Gumbel Sigmoid, and gate discretization using a straight-through estimator (STE). (c) A sparse regularization loss, together with compact linear decoding, is incorporated to achieve efficient end-to-end training of structured gates, latent codes, decoders, and positional offset residuals.
+
+**Overview of the S²GS framework.** (a) The streaming octree representation is initialized using root Gaussian primitives from the first frame and subsequently represents FVVs with multi-resolution hierarchical grids, enabling Level-of-Motion modeling and efficient point queries. (b) A learnable structured gating mechanism is introduced to sparsify Gaussian residuals via hierarchical feature propagation, differentiable sampling with Gumbel Sigmoid, and gate discretization using a straight-through estimator (STE). (c) A sparse regularization loss, together with compact linear decoding, is incorporated to achieve efficient end-to-end training of structured gates, latent codes, decoders, and positional offset residuals.
 
 ## 🌟 Get started
 
@@ -50,7 +52,7 @@ Download the [Meet Room dataset](https://github.com/AlgoHunt/StreamRF?tab=readme
 
 Please reach out to the authors of the paper [Efficient neural radiance fields for interactive free-viewpoint video](https://github.com/zju3dv/ENeRF) for access to the dataset. Please extract videos of each scene to `./data/enerf/scene_name`.
 
-### Running
+### End-to-end Running
 
 For data preprocessing, model training, rendering, and evaluation on the N3DV Dataset:
 
