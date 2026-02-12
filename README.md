@@ -51,17 +51,17 @@ Please reach out to the authors of the paper [Efficient neural radiance fields f
 
 ### Running
 
-For data preprocessing, model training, rendering, and evaluation on N3DV Dataset:
+For data preprocessing, model training, rendering, and evaluation on the N3DV Dataset:
 
 ```
 bash ./scripts/pre_dynerf/run_train_eval.sh
 ```
-For data preprocessing, model training, rendering, and evaluation on Meet Room Dataset:
+For data preprocessing, model training, rendering, and evaluation on the Meet Room Dataset:
 
 ```
 bash ./scripts/pre_meetroom/run_train_eval.sh
 ```
-For data preprocessing, model training, rendering, and evaluation on ENeRF Outdoor Dataset:
+For data preprocessing, model training, rendering, and evaluation on the ENeRF Outdoor Dataset:
 
 ```
 bash ./scripts/pre_enerf/run_train_eval.sh
