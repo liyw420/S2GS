@@ -71,4 +71,4 @@ bash ./scripts/pre_enerf/run_train_eval.sh
 
 ## 🙏 Acknowledgements
 
-GC-4DGS builds upon the original [QUEEN](https://github.com/NVlabs/queen) codebase. Besides, we thank all authors from [Octree-GS](https://github.com/city-super/Octree-GS) and [3D Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting) for presenting such excellent works.
+GC-4DGS builds upon the original [QUEEN](https://github.com/NVlabs/queen) codebase. Besides, we thank all authors from [Octree-GS](https://github.com/city-super/Octree-GS) and [3D Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting) for their contributions.
