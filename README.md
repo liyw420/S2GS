@@ -5,7 +5,7 @@
 <div align="center">
   <img src="assets/teaser.png"/>
 </div><br/>
-**This repository is the official implementation of "Sparsity Matters: Efficient On-Device Streaming of Free-Viewpoint Videos via Structured Sparse Gaussian Splatting".** In this paper, we propose S²GS, a novel on-device FVV streaming framework that integrates end-to-end learnable structured sparsity into Gaussian Splatting. Notably, compared with a recent FVV method [QUEEN](https://github.com/NVlabs/queen), S²GS reduces Gaussian primitives by 67.6%, storage costs by 84.9%, and training time by 59.5%, while achieving 480+ FPS rendering on the N3DV dataset.
+**This repository is the official implementation of "Sparsity Matters: Efficient On-Device Streaming of Free-Viewpoint Videos via Structured Sparse Gaussian Splatting".** In this paper, we propose S²GS, a novel on-device FVV streaming framework that integrates end-to-end learnable structured sparsity into Gaussian Splatting. Notably, compared with [QUEEN](https://github.com/NVlabs/queen), S²GS reduces Gaussian primitives by 67.6%, storage costs by 84.9%, and training time by 59.5%, while achieving 480+ FPS rendering on the N3DV dataset.
 
 ---
 ## 🔥 News
@@ -16,7 +16,6 @@
 <div align="center">
   <img src="assets/pipeline.png"/>
 </div><br/>
----
 
 ## 🌟 Get started
 
