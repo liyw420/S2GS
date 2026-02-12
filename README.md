@@ -16,6 +16,7 @@
 <div align="center">
   <img src="assets/pipeline.png"/>
 </div><br/>
+Overview of the S²GS framework. (a) The streaming octree representation is initialized using root Gaussian primitives from the first frame and subsequently represents FVVs with multi-resolution hierarchical grids, enabling Level-of-Motion modeling and efficient point queries. (b) A learnable structured gating mechanism is introduced to sparsify Gaussian residuals via hierarchical feature propagation, differentiable sampling with Gumbel Sigmoid, and gate discretization using a straight-through estimator (STE). (c) A sparse regularization loss, together with compact linear decoding, is incorporated to achieve efficient end-to-end training of structured gates, latent codes, decoders, and positional offset residuals.
 
 ## 🌟 Get started
 
