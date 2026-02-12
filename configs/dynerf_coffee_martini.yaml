@@ -20,7 +20,7 @@ model_params:
     gate_gamma: -0.5
     gate_eta: 1.01
     gate_lr: 0.1
-    gate_lambda_l2: 0.0
+    gate_lambda_l2: 0.01
     gate_lambda_l0: 0.01
 
     lambda_depth: 0.0
@@ -87,7 +87,7 @@ opt_params_initial:
     lambda_tv: 0.1
 
 opt_params_rest:
-    epochs_rest: 20
+    epochs_rest: 10
 
     offset_ldecs_lr_rest: 1.0e-3
     offset_lr_scaling_rest: 10.0

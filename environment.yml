@@ -1,4 +1,4 @@
-name: queen
+name: S2GS
 channels:
   - pytorch
   - conda-forge
@@ -6,7 +6,7 @@ channels:
 dependencies:
   - cudatoolkit=11.6
   - plyfile=0.8.1
-  - python=3.7.13
+  - python=3.8.20
   - pip=22.3.1
   - pytorch=1.12.1
   - torchaudio=0.12.1

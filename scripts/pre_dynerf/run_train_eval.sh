@@ -1,6 +1,6 @@
 
-DATA_ROOT_DIR="/media/vincent/HDD-01/S2GS/data"
-DATA_OUTPUT_DIR="/media/vincent/HDD-01/S2GS/output"
+DATA_ROOT_DIR="XXX/S2GS/data"
+DATA_OUTPUT_DIR="XXX/S2GS/output"
 
 DATASETS=(
     dynerf
@@ -8,11 +8,11 @@ DATASETS=(
 
 SCENES=(
     coffee_martini
-    cook_spinach
-    cut_roasted_beef
-    flame_salmon
-    flame_steak
-    sear_steak
+    # cook_spinach
+    # cut_roasted_beef
+    # flame_salmon
+    # flame_steak
+    # sear_steak
     )
 
 RESOLUTION=(
@@ -72,8 +72,8 @@ for SCENE in "${SCENES[@]}"; do
     --config configs/${DATASETS}_${SCENE}.yaml \
     -s ${SCENE_PATH} \
     -m ${OUTPUT_PATH} \
-    --log_images \
     "
+    # Add --log_images if needed \
     # Add --log_labels if needed \
 
     CMD_11="python ./metrics_video.py \
@@ -91,5 +91,5 @@ for SCENE in "${SCENES[@]}"; do
     # eval $CMD_8
     # eval $CMD_9
     eval $CMD_10
-    eval $CMD_11
+    # eval $CMD_11
 done

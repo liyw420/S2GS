@@ -293,7 +293,7 @@ class GaussianModel:
         scaling = self.latent_decoders["sc"](self._latents["sc"])
         if self.prev_atts["sc"] is not None and self.gate_atts is not None and self.gate_params["sc"]:
             scaling = self.gate_atts(scaling-self.prev_atts["sc"])+self.prev_atts["sc"]
-        
+                                          
         if (torch.isnan(scaling).sum() > 0):
             raise ValueError("Nan")
         
@@ -329,7 +329,17 @@ class GaussianModel:
     
     @property
     def get_scaling(self):
-        return torch.clamp(self.scaling_activation(self._scaling), min=1e-8)
+        scaling_raw = self._scaling
+        # Additional safety: ensure values are in safe range for exp
+        scaling_clamped = torch.clamp(scaling_raw, min=-20.0, max=10.0)
+        result = torch.clamp(self.scaling_activation(scaling_clamped), min=1e-8)
+        
+        # Check for NaN values in output
+        if torch.isnan(result).any():
+            print(f"WARNING: NaN detected in get_scaling, max value: {scaling_raw.max()}, min value: {scaling_raw.min()}")
+            result = torch.nan_to_num(result, nan=1e-8, posinf=1.0, neginf=1e-8)
+        
+        return result
     
     @property
     def get_rotation(self):
@@ -964,177 +974,6 @@ class GaussianModel:
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
 
-    # def save_compressed_pkl(self, path, latent_args):
-    #     mkdir_p(os.path.dirname(path))
-
-    #     latents = OrderedDict()
-    #     decoder_state_dict = OrderedDict()
-    #     decoder_args = OrderedDict()
-                
-    #     for i,attribute in enumerate(self.param_names):
-    #         if isinstance(self.latent_decoders[attribute], DecoderIdentity):
-    #             if self.prev_atts[attribute] is not None and self.gate_atts is not None and self.gate_params[attribute]:
-    #                 xyz = self.latent_decoders["offset"](self._latents["offset"])
-    #                 prev = self.offset_before[self.mapping]
-    #                 residual_xyz = xyz - prev
-                    
-    #                 # Get ungated indices and their residual values
-    #                 ungated_xyz_indices = self.gate_atts.sample_gate(stochastic=False).nonzero(as_tuple=True)[0]
-    #                 # compute the number of bits needed to store the max value in ungated_xyz_indices
-    #                 max_value = ungated_xyz_indices.max()
-    #                 num_bits = max_value.item().bit_length()
-    #                 if num_bits < 8:
-    #                     ungated_xyz_indices = ungated_xyz_indices.type(torch.int8)
-    #                 elif num_bits < 16:
-    #                     ungated_xyz_indices = ungated_xyz_indices.type(torch.short)
-    #                 elif num_bits < 32:
-    #                     ungated_xyz_indices = ungated_xyz_indices.type(torch.int)
-    #                 else:
-    #                     ungated_xyz_indices = ungated_xyz_indices.type(torch.long)
-    #                 # Store the gated residuals, not raw residuals
-    #                 ungated_residuals = self.gate_atts(residual_xyz)[ungated_xyz_indices]
-    #                 compressed_residuals = CompressedLatents()
-    #                 compressed_residuals.compress(ungated_residuals, scale=10000.0)
-
-    #                 # Store minimal data needed for reconstruction
-    #                 latents[attribute] = {
-    #                     'mapping': self.mapping,
-    #                     'ungated_indices': ungated_xyz_indices,
-    #                     'ungated_residuals_compressed': compressed_residuals
-    #                     # '_xyz_debug': self._xyz,
-    #                     # 'xyz_before_debug': self.xyz_before,
-    #                     # 'prev_att_debug': self.prev_atts[attribute]
-    #                 }
-                    
-    #                 # Verify reconstruction matches _xyz
-    #                 reconstructed_xyz = prev.clone()
-    #                 reconstructed_xyz[ungated_xyz_indices] += ungated_residuals
-    #                 # assert torch.allclose(self._xyz, reconstructed_xyz, rtol=1e-5, atol=1e-5), "Reconstruction verification failed!"
-    #             else:
-    #                 # For non-gated DecoderIdentity attributes, just store the latents directly
-    #                 latents[attribute] = self._latents[attribute].detach().cpu()
-    #         else:
-    #             latent = self._latents[attribute].detach().cpu()
-    #             compressed_obj = CompressedLatents()
-    #             compressed_obj.compress(latent)
-    #             latents[attribute] = compressed_obj
-    #             decoder_args[attribute] = {
-    #                 'latent_dim': latent_args.latent_dim[i],
-    #                 'feature_dim': self.feature_dims[attribute],
-    #                 'ldecode_matrix': latent_args.ldecode_matrix[i],
-    #                 'latent_norm': latent_args.latent_norm[i],
-    #                 'num_layers_dec': latent_args.num_layers_dec[i],
-    #                 'hidden_dim_dec': latent_args.hidden_dim_dec[i],
-    #                 'activation': latent_args.activation[i],
-    #                 'use_shift': latent_args.use_shift[i],
-    #                 'ldec_std': latent_args.ldec_std[i]
-    #             }
-    #             decoder_state_dict[attribute] = self.latent_decoders[attribute].state_dict().copy()
-
-    #             # manually add the decoded_att to the state_dict
-    #             if hasattr(self.latent_decoders[attribute], 'decoded_att'):
-    #                 decoder_state_dict[attribute]['decoded_att'] = self.latent_decoders[attribute].decoded_att.detach().cpu()
-
-    #     save_state = {
-    #                      'latents': latents,
-    #                      'decoder_state_dict': decoder_state_dict,
-    #                      'decoder_args': decoder_args,
-    #                      'latent_decoders_dict': {attr: type(self.latent_decoders[attr]).__name__ for attr in self.param_names}
-    #         }
-
-    #     with open(path,'wb') as f:
-    #         pickle.dump(save_state, f)
-
-    # def load_compressed_pkl(self, path):
-    #     with open(path,'rb') as f:
-    #         data = pickle.load(f)
-    #         latents = data['latents']
-    #         decoder_state_dict = data['decoder_state_dict']
-    #         decoder_args = data['decoder_args']
-    #         latent_decoders_dict = data['latent_decoders_dict']
-                        
-    #     # First verify the number of gaussians matches
-    #     num_gaussians = None
-    #     for attribute in latents:
-    #         if isinstance(latents[attribute], dict) and 'num_gaussians' in latents[attribute]:
-    #             if num_gaussians is None:
-    #                 num_gaussians = latents[attribute]['num_gaussians']
-    #             elif num_gaussians != latents[attribute]['num_gaussians']:
-    #                 raise ValueError(f"Inconsistent number of gaussians in compressed data: {num_gaussians} vs {latents[attribute]['num_gaussians']}")
-        
-    #     # Initialize gate if needed
-    #     if num_gaussians is not None:
-    #         if self.gate_atts is None:
-    #             self.gate_atts = Gate(num_gaussians, 
-    #                                 gamma=self.model_args.gate_gamma,
-    #                                  eta=self.model_args.gate_eta,
-    #                                  lr=self.model_args.gate_lr,
-    #                                  temp=self.model_args.gate_temp).cuda()
-        
-    #     # Then proceed with loading attributes
-    #     for i, attribute in enumerate(latents):
-    #         if self.latent_args.gate_params[i] == 'on':
-    #             # if the gate_params is on, that means we are loading gated attributes
-    #             # Reconstruct prev_atts from sparse difference
-    #             if self.prev_atts[attribute] is not None:
-    #                 prev_att = self.prev_atts[attribute]
-    #             else:
-    #                 prev_att = torch.zeros([num_gaussians, 3], device="cuda")
-
-    #             prev_att_mapping = latents[attribute]["mapping"].cuda()
-
-    #             reconstructed = prev_att[prev_att_mapping].clone() 
-    #             ungated_xyz_indices = latents[attribute]['ungated_indices']
-    #             ungated_residuals = latents[attribute]['ungated_residuals_compressed'].uncompress(scale=10000.0).cuda()
-    #             reconstructed[ungated_xyz_indices] += ungated_residuals
-                
-    #             # Verify reconstruction matches _xyz
-    #             # original_xyz = latents[attribute]['_xyz_debug']
-    #             # assert torch.allclose(original_xyz, reconstructed, rtol=1e-5, atol=1e-5), "Reconstruction verification failed!"
-                
-    #             self.mapping = prev_att_mapping
-                
-    #             self._latents[attribute] = nn.Parameter(reconstructed.requires_grad_(False))
-    #         else:
-    #             if self.prev_atts[attribute] is not None:
-    #                 prev_att = self.prev_atts[attribute]
-    #             else:
-    #                 prev_att = torch.zeros(latents[attribute]["shape"], device="cuda")
-    #             remapped_prev_att = prev_att[prev_att_mapping]  
-
-    #             # then we define it based on the decoder type
-    #             if latent_decoders_dict[attribute] == "LatentDecoder":
-    #                 self.latent_decoders[attribute] = LatentDecoder(**decoder_args[attribute]).cuda()
-    #                 self.latent_decoders[attribute].load_state_dict(decoder_state_dict[attribute])
-    #                 self._latents[attribute] = nn.Parameter(latents[attribute].uncompress().cuda().requires_grad_(False))
-                    
-    #             elif latent_decoders_dict[attribute] == "DecoderIdentity":
-    #                 # Identity decoder (no compression)
-    #                 self.latent_decoders[attribute] = DecoderIdentity().cuda()
-    #                 self._latents[attribute] = nn.Parameter(latents[attribute].cuda().requires_grad_(False))
-                    
-    #             elif latent_decoders_dict[attribute] == "LatentDecoderRes":
-    #                 # Residual decoder with previous frame reference
-    #                 self.latent_decoders[attribute] = LatentDecoderRes(**decoder_args[attribute]).cuda()
-                    
-    #                 # Extract and initialize with previous frame's decoded attributes
-    #                 decoded_att = decoder_state_dict[attribute]['decoded_att'].clone().cuda()
-    #                 del decoder_state_dict[attribute]['decoded_att']  # Remove from state dict before loading
-                    
-    #                 self.latent_decoders[attribute].load_state_dict(decoder_state_dict[attribute])
-    #                 self.latent_decoders[attribute].init_decoded(decoded_att)
-    #                 self.latent_decoders[attribute].identity = False  # Enable quantized mode
-    #                 self.latent_decoders[attribute].frame_idx = self.frame_idx
-    #                 self._latents[attribute] = nn.Parameter(latents[attribute].uncompress().cuda().requires_grad_(False))
-                    
-    #                 # Verify decoder functionality
-    #                 test_output = self.latent_decoders[attribute](self._latents[attribute])
-    #                 expected_dim = decoder_args[attribute]['feature_dim']
-    #                 if test_output.shape[-1] != expected_dim:
-    #                     print(f"Warning: {attribute} decoder output shape {test_output.shape} != expected {expected_dim}")
-        
-    #     self.active_sh_degree = self.max_sh_degree
-
     def decode_latents(self):
         with torch.no_grad():
             for param in self.param_names:
@@ -1396,101 +1235,6 @@ class GaussianModel:
         self.infl_accum *= 0
         self.infl_denom *= 0
 
-    # def copy(self):
-    #     """Create a deep copy of the GaussianModel instance.
-        
-    #     Returns:
-    #         GaussianModel: A new instance with copied attributes and parameters.
-    #     """
-    #     # Create new instance with same initialization parameters
-    #     new_model = GaussianModel(self.max_sh_degree, self.latent_args, self.model_args, self.frame_idx, self.use_offset_legacy)
-        
-    #     # Copy basic attributes
-    #     new_model.active_sh_degree = self.active_sh_degree
-    #     new_model.spatial_lr_scale = self.spatial_lr_scale
-    #     new_model.percent_dense = self.percent_dense
-        
-    #     # Copy latents
-    #     for param_name in self.param_names:
-    #         new_model._latents[param_name] = nn.Parameter(self._latents[param_name].data.clone().requires_grad_(True))
-        
-    #     # Copy decoder state dicts
-    #     atts = self.get_atts # All the latent variables
-    #     for i, att_name in enumerate(atts):
-    #         if not isinstance(self.latent_decoders[param_name], DecoderIdentity):
-    #             # first check if the decoder is a DecoderIdentity
-    #             if isinstance(new_model.latent_decoders[param_name], DecoderIdentity):
-    #                 decoder = LatentDecoderRes(
-    #                     latent_dim=self.latent_args.latent_dim[i],
-    #                     feature_dim=self.feature_dims[att_name],
-    #                     ldecode_matrix=self.latent_args.ldecode_matrix[i],
-    #                     latent_norm=self.latent_args.latent_norm[i],
-    #                     num_layers_dec=self.latent_args.num_layers_dec[i],
-    #                     hidden_dim_dec=self.latent_args.hidden_dim_dec[i],
-    #                     activation=self.latent_args.activation[i],
-    #                     use_shift=self.latent_args.use_shift[i],
-    #                     ldec_std=self.latent_args.ldec_std[i],
-    #                     final_activation=self.latent_args.final_activation[i],
-    #                 ).cuda()
-    #                 new_model.latent_decoders[att_name] = decoder
-    #             else: 
-    #                 new_model.latent_decoders[param_name].load_state_dict(
-    #                     self.latent_decoders[param_name].state_dict()
-    #                 )
-        
-    #     # Copy masks
-    #     new_model.mask_offset.data = self.mask_offset.data.clone()
-    #     new_model.mask_features_dc.data = self.mask_features_dc.data.clone()
-    #     new_model.mask_features_rest.data = self.mask_features_rest.data.clone()
-    #     new_model.mask_scaling.data = self.mask_scaling.data.clone()
-    #     new_model.mask_rotation.data = self.mask_rotation.data.clone()
-    #     new_model.mask_opacity.data = self.mask_opacity.data.clone()
-    #     new_model.mask_flow.data = self.mask_flow.data.clone()
-        
-    #     # Copy freeze states
-    #     new_model.frz_offset = self.frz_offset
-    #     new_model.frz_features_dc = self.frz_features_dc
-    #     new_model.frz_features_rest = self.frz_features_rest
-    #     new_model.frz_scaling = self.frz_scaling
-    #     new_model.frz_rotation = self.frz_rotation
-    #     new_model.frz_opacity = self.frz_opacity
-    #     new_model.frz_flow = self.frz_flow
-        
-    #     # Copy previous attributes and latents
-    #     for param_name in self.param_names:
-    #         if self.prev_atts[param_name] is not None:
-    #             new_model.prev_atts[param_name] = self.prev_atts[param_name].clone()
-    #         if self.prev_latents[param_name] is not None:
-    #             new_model.prev_latents[param_name] = self.prev_latents[param_name].clone()
-        
-    #     # Copy gate attributes if they exist
-    #     if self.gate_atts is not None:
-    #         new_model.gate_atts = self.gate_atts.copy()
-    #         new_model.gate_params = self.gate_params.copy()
-        
-    #     # Copy other tensors
-    #     new_model.max_radii2D = self.max_radii2D.clone()
-    #     new_model.offset_gradient_accum = self.offset_gradient_accum.clone()
-    #     new_model.infl_accum = self.infl_accum.clone()
-    #     new_model.denom = self.denom.clone()
-    #     new_model.infl_denom = self.infl_denom.clone()
-        
-    #     # Copy mapping and xyz_before if they exist and are not None
-    #     if hasattr(self, 'mapping') and self.mapping is not None:
-    #         new_model.mapping = self.mapping.clone()
-    #     if hasattr(self, 'xyz_before') and self.offset_before is not None:
-    #         new_model.offset_before = self.offset_before.clone()
-        
-    #     # Copy added_mask if it exists and is not None
-    #     if hasattr(self, 'added_mask') and self.added_mask is not None:
-    #         new_model.added_mask = self.added_mask.clone()
-        
-    #     # Copy init_probs if it exists and is not None
-    #     if hasattr(self, 'init_probs') and self.init_probs is not None:
-    #         new_model.init_probs = self.init_probs.clone()
-        
-    #     return new_model
-
 # OCTREE_LoD---------------------------------------------------------------------------------------------------------------------
     @property
     def get_level(self):
@@ -1576,7 +1320,6 @@ class GaussianModel:
         for cam in self.cam_infos:
             cam_center, scale = cam[:3], cam[3]
             dist = torch.sqrt(torch.sum((gaussian_positions - cam_center)**2, dim=1)) * scale       # 计算每个高斯元素到相机中心的欧氏距离, 乘以scale进行距离缩放
-            # pred_level = torch.log2(self.standard_dist/dist)/math.log2(self.fork)                   # 根据距离计算理论上应该使用的细节层级 
             pred_level = log_base(self.standard_dist/dist, self.log_base)   
             int_level = self.map_to_int_level(pred_level, self.levels - 1)                          # 将连续的预测层级映射到离散的整数层级
             visible_count += (gaussian_levels <= int_level).int()           # 判断可见性, 如果高斯元素的实际层级 <= 相机视角预测的理想层级, 说明该高斯元素在这个视角下需要被渲染

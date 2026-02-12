@@ -45,7 +45,7 @@ class StraightThrough(torch.autograd.Function):
         return grad_output
 
 class StraightThroughFloat(torch.autograd.Function):
-    """Straight-through estimator for quantization - rounds in forward, passes gradients unchanged."""
+    """Straight-through estimator for sparsity - rounds in forward, passes gradients unchanged."""
 
     @staticmethod
     def forward(ctx, x):
@@ -305,8 +305,7 @@ class LatentDecoder(Module):
         return list(self.layers.children())[0].scale.grad.norm()
     
     def forward(self, weight: Tensor) -> Tensor:
-        """Forward pass through decoder with optional masking for partial freezing."""
-        weight = StraightThrough.apply(weight)                              # 应用直通估计器，在反向传播时允许梯度通过，但在前向传播中保持离散性
+        """Forward pass through decoder with optional masking for partial freezing."""                         
         if self.mask is not None:
             # Handle partially frozen decoder
             w_out_nonfrz = self.layers(weight[self.mask]/self.div)
@@ -319,7 +318,7 @@ class LatentDecoder(Module):
             w_out = self.layers(weight/self.div)
         w_out = self.final_activation(w_out)
         if self.clamp_weights>0.0:
-            w_out = torch.clamp(w_out, min=-self.clamp_weights, max=self.clamp_weights)         # 权重裁剪，防止数值爆炸，提高训练稳定性
+            w_out = torch.clamp(w_out, min=-self.clamp_weights, max=self.clamp_weights)         
         return w_out
     
     def freeze_partial(self, mask: torch.Tensor):
@@ -419,10 +418,6 @@ class LatentDecoderRes(LatentDecoder):
             # First frame: no residual connection
             return weight
             
-        # Standard residual decoding
-        weight = StraightThrough.apply(weight)
-        # if weight.sum() == 0:
-        #     raise ValueError("Nan") 
         if self.gates is not None:
             weight = weight * self.gates.view(-1, 1)
 
@@ -465,26 +460,6 @@ class LatentDecoderRes(LatentDecoder):
     def clamp_params(self):
         """Clamp log_alphas to prevent extreme values."""
         self.log_alphas.data.clamp_(min=math.log(1e-3), max=math.log(1e3))
-
-    def cdf(self, x):
-        """Cumulative distribution function for concrete distribution."""
-        # Safely convert scalar/numpy inputs to tensor on the correct device
-        if not torch.is_tensor(x):
-            # try to pick a sensible device/dtype from available attributes
-            device = getattr(self, 'log_alphas', None).device if hasattr(self, 'log_alphas') else (getattr(self, 'decoded_att', None).device if hasattr(self, 'decoded_att') else torch.device('cpu'))
-            dtype = getattr(self, 'log_alphas', None).dtype if hasattr(self, 'log_alphas') else torch.float32
-            x = torch.tensor(x, device=device, dtype=dtype)
-        else:
-            # move to consistent device/dtype
-            if hasattr(self, 'log_alphas'):
-                x = x.to(device=self.log_alphas.device, dtype=self.log_alphas.dtype)
-
-        xstretch = (x - self.gamma) / (self.eta - self.gamma)
-        xstretch = torch.clamp(xstretch, min=epsilon, max=1 - epsilon)
-        logits = torch.log(xstretch) - torch.log(1 - xstretch) # log(-gamma/eta) for x=0
-        probs = torch.sigmoid(logits * self.temp - self.log_alphas)
-        return probs.clamp(min=epsilon, max=1-epsilon)
-
 
 class DecoderIdentity(Module):
     """Identity decoder that passes input through unchanged (no compression)."""
@@ -653,12 +628,10 @@ class Gate(Module):
             init_probs = init_probs.flatten()
             assert init_probs.shape[0] == self.log_alphas.shape[0]
             init_probs = torch.clamp(init_probs,epsilon,1-epsilon)
-            # Convert probabilities to log odds with temperature scaling
-            self.log_alphas.data = torch.log(init_probs/(1-init_probs))+ self.temp*math.log(-self.gamma/self.eta)               # hard concrete init
-            # self.log_alphas.data = torch.log(init_probs/(1-init_probs))                                                       # binary concrete init
+            # Convert probabilities to log odds for binary concrete initialization
+            self.log_alphas.data = torch.log(init_probs/(1-init_probs))                                                       # binary concrete init
             self.clamp_params()
-            gate = self.sample_gate(stochastic=False)                                                                           # hard concrete init
-            # gate = self.sample_gate_Gumbel_Softmax(stochastic=True)                                                           # binary concrete init
+            gate = self.sample_gate_Gumbel_Softmax(stochastic=True)                                                           # binary concrete init
             self.gate = gate # used outside of module
         else:
             self.log_alphas.data *= 0
@@ -730,7 +703,7 @@ class Gate(Module):
     @torch.no_grad()
     def size(self):
         """Calculate compressed size of gate pattern using entropy."""
-        gate = self.sample_gate(stochastic=False)
+        gate = self.sample_gate_Gumbel_Softmax(stochastic=False)
         num_inactive = (gate==0).sum().item()
         num_active = gate.numel()-num_inactive
         num_gates = gate.numel()
@@ -744,19 +717,6 @@ class Gate(Module):
     def clamp_params(self):
         """Clamp log_alphas to prevent extreme values."""
         self.log_alphas.data.clamp_(min=math.log(1e-3), max=math.log(1e3))
-
-    def cdf(self, x):
-        """Cumulative distribution function for nard concrete distribution."""
-        # Ensure x is a tensor on the same device/dtype as log_alphas
-        if not torch.is_tensor(x):
-            x = torch.tensor(x, device=self.log_alphas.device, dtype=self.log_alphas.dtype)
-        else:
-            x = x.to(device=self.log_alphas.device, dtype=self.log_alphas.dtype)
-        xstretch = (x - self.gamma) / (self.eta - self.gamma)
-        xstretch = torch.clamp(xstretch, min=epsilon, max=1 - epsilon)
-        logits = torch.log(xstretch) - torch.log(1 - xstretch) # log(-gamma/eta) for x=0
-        probs = torch.sigmoid(logits * self.temp - self.log_alphas)
-        return probs.clamp(min=epsilon, max=1-epsilon)
     
     def cdf_binary_concrete(self, x):
         """
@@ -781,8 +741,7 @@ class Gate(Module):
         """Compute L2 regularization loss."""
         # assert x.shape[0] == self.num_gates
         lambda_net = torch.mean((0.5*self.lambda_l2 * x.pow(2)) + self.lambda_l0, dim=1)
-        # net_reg_loss = torch.mean((1 - self.cdf_binary_concrete(0.05)[self.inverse_indices]) * lambda_net)    # using binary concrete CDF
-        net_reg_loss = torch.mean((1 - self.cdf(0)[self.inverse_indices]) * lambda_net)                         # using hard concrete CDF
+        net_reg_loss = torch.mean((1 - self.cdf_binary_concrete(0.05)[self.inverse_indices]) * lambda_net)   
         with torch.no_grad():
              net_reg_loss[torch.isnan(net_reg_loss)] = 0.0
         return net_reg_loss
@@ -796,29 +755,6 @@ class Gate(Module):
         """Hard concrete distribution transformation."""
         y = torch.sigmoid((torch.log(x) - torch.log(1 - x) + self.log_alphas) / self.temp)
         return y * (self.eta - self.gamma) + self.gamma
-
-    def sample_gate(self, stochastic=True):
-        """Sample gate values (stochastic during training, deterministic for eval)."""
-        self.clamp_params()
-        if stochastic:
-            if self.iter_counter == self.iter_noise:
-                self.resample_noise()
-                self.iter_counter = 0
-            noise = self.noise[:,self.iter_counter]
-            gate = self.hconcrete_dist(noise)
-        else:
-            # Deterministic sampling for evaluation
-            gate = torch.sigmoid(self.log_alphas/self.temp)*(self.eta-self.gamma)+self.gamma
-        
-        if torch.isnan(gate).any():
-            gate = torch.nan_to_num(gate, nan=0.0) 
-
-        clamped_gate = F.hardtanh(gate, min_val=0.0, max_val=1.0)
-
-        if (torch.isnan(clamped_gate).sum() > 0):
-            raise ValueError("Nan")   
-
-        return clamped_gate
 
     def sample_gate_Gumbel_Softmax(self, stochastic=True):
         """Sample gate values using Gumbel-Softmax/Binary Concrete."""
@@ -852,7 +788,6 @@ class Gate(Module):
 
     def forward(self, x, stochastic=False):                             # True: binary_concrete; False: deterministic
         """Apply gating to input tensor x."""
-        # gate = self.sample_gate(stochastic=stochastic)
         gate = self.sample_gate_Gumbel_Softmax(stochastic=stochastic)
         self.structural_gate = gate                                     # used outside of module
         gate = gate.index_select(0, self.inverse_indices)

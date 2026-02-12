@@ -45,8 +45,6 @@ from utils.image_utils import resize_image, downsample_image, blur_image, get_ma
 from utils.loader_utils import MultiViewVideoDataset
 from utils.loader_utils import SequentialMultiviewSampler, MultiViewVideoDataset
 from arguments import ModelParams, PipelineParams, OptimizationParams, QuantizeParams, OptimizationParamsInitial, OptimizationParamsRest
-from scene.utils import get_depth_model, get_depth_poses
-from MiDaS.run import process
 from scene.decoders import LatentDecoder, LatentDecoderRes, Gate
 from generate_video_all import symlink
 from scipy import ndimage
@@ -78,7 +76,7 @@ except ImportError:
 
 def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams, qp:QuantizeParams, opt_lod, testing_iterations: list, 
              saving_iterations: list, checkpoint_iterations, checkpoint: str, debug_from, args):
-    """Main training function for QUEEN compressed Gaussian splatting."""
+    """Main training function for Structured Sparse Gaussian splatting (S²GS)."""
     wandb_enabled = WANDB_FOUND and dataset.use_wandb
     tb_writer = prepare_output_and_logger(args)
     generator = Random(dataset.seed)
@@ -168,34 +166,6 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
         frame_iters = np.concatenate((np.array([opt.iterations]),frame_epochs*n_cams))
     else:
         frame_iters = np.array([opt.iterations]+[opt.opt_rest['epochs_rest']*n_cams]*(n_frames-1))
-    if opt.lambda_depth>0.0 or dataset.depth_init:
-
-        ## MiDas model for monocular depth estimation
-        depth_model, transform, net_w, net_h = get_depth_model(dataset)
-        for camera in train_cameras:
-            gt_image = camera.original_image.permute(1,2,0).detach().cpu().numpy()
-            image = transform({"image": gt_image})["image"]
-            with torch.no_grad():
-                prediction = process(torch.device("cuda" if torch.cuda.is_available() else "cpu"), 
-                                     depth_model, 'dpt_beit_large_512', image, (net_w, net_h), 
-                                     gt_image.shape[1::-1],
-                                     False, False)
-                camera.gt_depth = torch.tensor(prediction).cuda()
-
-        # Add points to gaussian model using the monocular depth
-        if dataset.depth_init:
-            gaussians.create_from_depth_immersive(cameras=train_cameras, spatial_lr_scale=gaussians.spatial_lr_scale, downsample_scale=1,
-                                        alpha_thresh=dataset.depth_thresh, renderFunc = functools.partial(render_mask, 
-                                                                                        pipe=pipe, 
-                                                                                        bg_color=bg, 
-                                                                                        image_shape=camera.original_image.shape, 
-                                                                                        color_mask=None, 
-                                                                                        render_depth=True))
-            
-        # Loss function for relative depth
-        depth_loss_fn = DepthRelLoss(camera.original_image.shape[1], camera.original_image.shape[2],
-                                     pix_diff=dataset.depth_pix_range, num_comp=dataset.depth_num_comp, 
-                                     tolerance=dataset.depth_tolerance)
 
     # Progressive training scheduler - OBSOLETE: Remove in future cleanup
     resize_scale_sched = DecayScheduler(
@@ -496,15 +466,6 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
             if iteration > opt.alpha_from_iter and opt.lambda_alpha>0.0:
                 loss += opt.lambda_alpha * l2_loss(render_pkg["alpha"],1.0)
 
-            # Depth supervision loss (first frame only)
-            if opt.lambda_depth>0.0 and iteration>opt.depth_from_iter and iteration<=opt.depth_until_iter and frame_idx == 1:
-                pred_depth = render_pkg["depth"] 
-                gt_depth = viewpoint_cam.gt_depth
-                depth_loss = (1.0 - opt.lambda_depthssim) * depth_loss_fn(pred_depth, gt_depth)+ opt.lambda_depthssim * (1.0 - ssim(pred_depth.unsqueeze(0), gt_depth.unsqueeze(0)))
-                loss += opt.lambda_depth * depth_loss + opt.lambda_tv * tv_loss(pred_depth)
-                if iteration % dataset.depth_pair_interval == 0:
-                    depth_loss_fn.resample_pairs()
-
             # Temporal consistency loss
             if opt.lambda_consistency>0.0:
                 prev_image = viewpoint_cam.prev_rendered
@@ -534,10 +495,6 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                     is_test = (iteration in testing_iterations) and frame_idx == 1
                 if iteration == opt.iterations:
                     is_test = True
-                    
-                # report = training_report(tb_writer, wandb_enabled, dataset, frame_idx, iteration, Ll1, loss, 
-                #                          l1_loss, cur_size, frame_time, is_test, scene, 
-                #                          render_lightweight, (pipe, background, iteration, "RGB"), prev_report=report)
                 
                 report = training_report(tb_writer, wandb_enabled, dataset, frame_idx, iteration, Ll1, loss, 
                                          l1_loss, cur_size, frame_time, is_test, scene, 
@@ -607,7 +564,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams
                     if (opt.iterations - iteration) < (2*n_cams): # Save most recent render for final epochs
                         viewpoint_cam.prev_rendered = render_pkg["render"].detach()
 
-                    if (opt.iterations - iteration)<(n_cams) and cam_idx == 3 and (dataset.log_images or dataset.log_compressed or dataset.log_ply):
+                    if (opt.iterations - iteration)<(n_cams) and cam_idx == 1 and (dataset.log_images or dataset.log_compressed or dataset.log_ply):
                         
                         if dataset.log_images:
                             save_image(gt_image,os.path.join(scene.model_path, "gt.png"))

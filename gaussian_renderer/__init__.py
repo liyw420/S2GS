@@ -229,11 +229,14 @@ def render_mask(viewpoint_camera: SequentialCamera, pc : GaussianModel, pipe, bg
     if color_mask is not None:
         colors_precomp = viewpoint_camera.colors_precomp
         assert color_mask.shape[0] == colors_precomp.shape[0]
-        
+
     if update_mask is None:
         update_mask = pc.mask_all[visible_mask]
     else:
-        update_mask = pc.mask_all[visible_mask]*update_mask[visible_mask]
+        update_mask = update_mask[visible_mask]
+        if update_mask.dim() == 1:
+            update_mask = update_mask.unsqueeze(1)
+        update_mask = pc.mask_all[visible_mask] * update_mask
     assert update_mask.shape[0] == means3D.shape[0]
     assert update_mask.shape[1] == 7
     # Rasterize visible Gaussians to image, obtain their radii (on screen).

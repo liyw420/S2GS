@@ -26,15 +26,6 @@ PathType = Union[Text, pathlib.PurePosixPath]
 
 from pathlib import PurePosixPath as GPath
 from arguments import ModelParams
-from MiDaS.midas.model_loader import default_models, load_model
-
-
-def get_depth_model(args: ModelParams):
-    """Load MiDaS depth estimation model and preprocessing transforms."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, transform, net_w, net_h = load_model(device, args.depth_model_ckpt, 'dpt_beit_large_512', 
-                                                optimize=False, height=None, square=False)
-    return model, transform, net_w, net_h
 
 def get_depth_poses(pose_file):
     """Load camera poses from numpy file and construct intrinsics matrix."""

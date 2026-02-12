@@ -1,6 +1,6 @@
 
-DATA_ROOT_DIR="/media/vincent/HDD-01/S2GS/data"
-DATA_OUTPUT_DIR="/media/vincent/HDD-01/S2GS/output"
+DATA_ROOT_DIR="XXX/S2GS/data"
+DATA_OUTPUT_DIR="XXX/S2GS/output"
 
 DATASETS=(
     enerf
@@ -74,8 +74,10 @@ for SCENE in "${SCENES[@]}"; do
     --config configs/${DATASETS}.yaml \
     -s ${SCENE_PATH} \
     -m ${OUTPUT_PATH} \
-    --log_images \
     "
+    
+    # Add --log_images if needed \
+    # Add --log_labels if needed \
 
     CMD_11="python ./metrics_video.py \
     -m ${OUTPUT_PATH} \
