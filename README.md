@@ -42,8 +42,29 @@ pip install --no-build-isolation ./submodules/gaussian-rasterization-grad
 
 **N3DV dataset:**
 
-Download the [Neural 3D Video dataset](https://github.com/facebookresearch/Neural_3D_Video) and extract vidoes of each scene to `./data/dynerf/scene_name`.
-
+Download the [Neural 3D Video dataset](https://github.com/facebookresearch/Neural_3D_Video) and extract vidoes of each scene to `./data/dynerf/scene_name`. After running, the dataset would be organized as follows:
+```
+| --- data
+|   | [dataset_directory]
+│     | [scene_name] 
+│   	  | cam01
+|            | images
+|     		  | ---0000.png
+│     		  | --- 0001.png
+│     		  | --- ...
+│   	  | cam02
+|            | images
+│     		  | --- 0000.png
+│     		  | --- 0001.png
+│     		  | --- ...
+│   	  | ...
+│   	  | sparse_
+│     		  | --- cameras.bin
+│     		  | --- images.bin
+│     		  | --- ...
+│   	  | points3D_downsample2.ply
+│   	  | poses_bounds.npy
+```
 **Meet Room dataset:**
 
 Download the [Meet Room dataset](https://github.com/AlgoHunt/StreamRF?tab=readme-ov-file) and extract videos of each scene to `./data/meetroom/scene_name`.
