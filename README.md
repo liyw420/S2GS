@@ -91,6 +91,20 @@ For data preprocessing, model training, rendering, and evaluation on the ENeRF O
 bash ./scripts/pre_enerf/run_train_eval.sh
 ```
 ---
+### Industrial Deployment
+<div align="center">
+  <img src="assets/results_edge.png"/>
+</div><br/>
+
+We conduct deployment experiments on the **NVIDIA Jetson AGX Orin Developer Kit**, a leading industrial edge computing platform. Results demonstrate the strong visual quality, high timeliness, and low resource consumption of S²GS-edge, making it well-suited for FVV streaming on resource-constrained industrial environments. 
+<div align="center">
+  <img src="assets/testbed.png"/>
+</div><br/>
+<div align="center">
+  <img src="assets/results_testbed.png"/>
+</div><br/>
+
+We also develop an FVV streaming system based on a telerobotic platform. Immersive digital twins involving human operators are reconstructed online to record and demonstrate the teleoperation procedures of robotic arms. Even under harsh FVV streaming conditions, such as sparse views, low resolution, and severe illumination interference, our method consistently outperforms existing approaches on visual quality and efficiency. In summary, S²GS-edge demonstrates both efficiency and effectiveness in real-world settings.
 
 ## 🙏 Acknowledgements
 
