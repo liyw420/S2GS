@@ -98,12 +98,12 @@ bash ./scripts/pre_enerf/run_train_eval.sh
 
 We conduct deployment experiments on the **NVIDIA Jetson AGX Orin Developer Kit**, a leading industrial edge computing platform. Results demonstrate the strong visual quality, high timeliness, and low resource consumption of S²GS-edge, making it well-suited for FVV streaming on resource-constrained industrial environments. 
 
-<div style="display: flex; justify-content: center; gap: 20px;">
-  <img src="assets/testbed.png" width="300" height="200"/>
-  <img src="assets/results_testbed.png" width="300" height="200"/>
+<div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start;">
+  <img src="assets/testbed.png" style="height: 150px; width: auto;"/>
+  <img src="assets/results_testbed.png" style="height: 150px; width: auto;"/>
 </div>
 
-We also develop an FVV streaming system based on a telerobotic platform. Immersive digital twins involving human operators are reconstructed online to record and demonstrate the teleoperation procedures of robotic arms. Even under harsh FVV streaming conditions, such as sparse views, low resolution, and severe illumination interference, our method consistently outperforms existing approaches on visual quality and efficiency. In summary, S²GS-edge demonstrates both efficiency and effectiveness in real-world settings.
+We also develop an FVV streaming system based on a telerobotic platform. Immersive digital twins involving human operators are reconstructed online to record and demonstrate the teleoperation procedures of robotic arms. Even under harsh FVV streaming conditions, such as sparse views, low resolution, and severe illumination interference, our method consistently outperforms existing approaches on visual quality and efficiency.
 
 ## 🙏 Acknowledgements
 
