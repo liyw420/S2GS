@@ -1,4 +1,4 @@
-# S²GS: Structured Sparse Gaussian Streaming for Efficient On-Device Free-Viewpoint Video Reconstruction
+# S²GS: Structured Sparse Gaussian Streaming for Efficient Free-Viewpoint Video Reconstruction
 
 ### Project Page | Paper | Supplementary Material
 
@@ -6,7 +6,7 @@
   <img src="assets/teaser.png"/>
 </div><br/>
 
-**This repository is the official implementation of "S²GS: Structured Sparse Gaussian Streaming for Efficient On-Device Free-Viewpoint Video Reconstruction".** In this paper, we propose S²GS, a novel on-device FVV streaming framework that integrates end-to-end learnable structured sparsity into Gaussian Splatting. Notably, compared with [QUEEN](https://github.com/NVlabs/queen), S²GS reduces Gaussian primitives by 67.6%, storage costs by 84.9%, and training time by 59.5%, while achieving 480+ FPS rendering on the N3DV dataset.
+**This repository is the official implementation of "S²GS: Structured Sparse Gaussian Streaming for Efficient Free-Viewpoint Video Reconstruction".** In this paper, we propose S²GS, an FVV reconstruction framework that exploits structure-aware temporal sparsity to selectively update Gaussian residuals, enabling efficient streaming without compromising visual fidelity. Notably, compared with [QUEEN](https://github.com/NVlabs/queen), S²GS reduces Gaussian primitives by 67.6%, storage costs by 84.9%, and training time by 59.5%, while achieving 480+ FPS rendering on the N3DV dataset.
 
 ---
 ## 🔥 News
@@ -18,7 +18,7 @@
   <img src="assets/pipeline.png"/>
 </div><br/>
 
-**Overview of the S²GS framework.** (a) The streaming octree representation is initialized using root Gaussian primitives from the first frame and subsequently represents FVVs with multi-resolution hierarchical grids, enabling Level-of-Motion modeling and efficient point queries. (b) A learnable structured gating mechanism is introduced to sparsify Gaussian residuals via hierarchical feature propagation, differentiable sampling with Gumbel Sigmoid, and gate discretization using a straight-through estimator (STE). (c) A sparse regularization loss, together with compact linear decoding, is incorporated to achieve efficient end-to-end training of structured gates, latent codes, decoders, and positional offset residuals.
+**Overview of the S²GS framework.** (a) The streaming octree representation is initialized using root Gaussian primitives from the first frame and subsequently represents FVVs with multi-resolution grids, enabling hierarchical allocation of Gaussian residuals and efficient point queries for FVV streaming. (b) A structured gating mechanism is introduced to induce sparse Gaussian residual updates through hierarchical feature propagation, differentiable sampling with Gumbel-Sigmoid, and multi-level (ML) discretization using a straight-through estimator (STE). (c) A sparse regularization loss is incorporated to enable efficient end-to-end optimization of structured gates and sparse residual updates.
 
 ## 🌟 Get started
 
@@ -103,7 +103,7 @@ We conduct deployment experiments on the **NVIDIA Jetson AGX Orin Developer Kit*
   <img src="assets/results_testbed.png" style="height: 150px; width: auto;"/>
 </div>
 
-We also develop an FVV streaming system based on a telerobotic platform. Immersive digital twins involving human operators are reconstructed online to record and demonstrate the teleoperation procedures of robotic arms. Even under harsh FVV streaming conditions, such as sparse views, low resolution, and severe illumination interference, our method consistently outperforms existing approaches on visual quality and efficiency.
+We also develop an FVV streaming system based on a telerobotic platform. Immersive digital twins of human operators are reconstructed online to record and demonstrate the teleoperation procedures of robotic arms. The case study provides proof-of-concept validation of the efficiency and effectiveness of S$^2$GS in a real-world industrial prototype.
 
 ## 🙏 Acknowledgements
 
