@@ -1,6 +1,6 @@
 # S²GS: Structured Sparse Gaussian Streaming for Efficient Free-Viewpoint Video Reconstruction
 
-### Project Page | Paper | Supplementary Material
+### Project Page | Paper | [Supplementary Material](https://github.com/liyw420/S2GS_SupplementaryMaterial)
 
 <div align="center">
   <img src="assets/teaser.png"/>
