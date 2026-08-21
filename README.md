@@ -35,7 +35,7 @@ Rui Cao,
 The hardware and software requirements are the same as those of the [QUEEN](https://github.com/NVlabs/queen), which this code is built upon. To setup the environment, please follow:
 
 ```shell
-git clone https://AnonymousAuthors/S2GS
+git clone https://github.com/liyw420/S2GS
 cd S2GS
 # Install dependencies from requirements.txt
 pip install -r requirements.txt
