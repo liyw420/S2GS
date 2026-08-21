@@ -2,6 +2,14 @@
 
 ### Project Page | [Paper](https://arxiv.org/abs/2608.19639) | [Supplementary Material](https://github.com/liyw420/S2GS_SupplementaryMaterial)
 
+[*Yiwei Li*](https://scholar.google.com/citations?user=RYUlClcAAAAJ&hl=en),
+[*Jiannong Cao*](https://www4.comp.polyu.edu.hk/~csjcao/),
+Weixun Gao,
+Rui Cao,
+[*Songye Zhu*](https://www.zhusongye.com/),
+[*Yinfeng Cao*](https://cyfaaa.github.io/)
+[*Mingjin Zhang*](https://scholar.google.com/citations?user=d08lrQ0AAAAJ&hl=en)
+
 <div align="center">
   <img src="assets/teaser.png"/>
 </div><br/>
