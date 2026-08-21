@@ -14,7 +14,7 @@ Rui Cao,
   <img src="assets/teaser.png"/>
 </div><br/>
 
-**This repository is the official implementation of "S²GS: Structured Sparse Gaussian Streaming for Efficient Free-Viewpoint Video Reconstruction".** In this paper, we propose S²GS, an FVV reconstruction framework that exploits structure-aware temporal sparsity to selectively update Gaussian residuals, enabling efficient streaming without compromising visual fidelity. Notably, compared with [QUEEN](https://github.com/NVlabs/queen), S²GS reduces Gaussian primitives by 67.6%, storage costs by 84.9%, and training time by 59.5%, while achieving 480+ FPS rendering on the N3DV dataset.
+**This repository is the official implementation of "S²GS: Structured Sparse Gaussian Streaming for Efficient Free-Viewpoint Video Reconstruction".** In this paper, we propose S²GS, an FVV reconstruction framework that exploits structure-aware temporal sparsity to selectively update Gaussian residuals, enabling efficient streaming without compromising visual fidelity. Notably, compared with [QUEEN](https://github.com/NVlabs/queen), S²GS reduces Gaussian primitives by 67.6%, storage costs by 84.9%, and training time by 59.5%, while achieving 480+ FPS rendering on the N3DV dataset. On the [Jetson AGX Orin](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/), S²GS delivers the highest rendering throughput (60+ FPS) and the lowest energy consumption, demonstrating its potential for deployment in resource-constrained systems.
 
 ---
 ## 🔥 News
