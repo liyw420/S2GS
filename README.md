@@ -7,7 +7,7 @@
 Weixun Gao,
 Rui Cao,
 [*Songye Zhu*](https://www.zhusongye.com/),
-[*Yinfeng Cao*](https://cyfaaa.github.io/)
+[*Yinfeng Cao*](https://cyfaaa.github.io/), and
 [*Mingjin Zhang*](https://scholar.google.com/citations?user=d08lrQ0AAAAJ&hl=en)
 
 <div align="center">
