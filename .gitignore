@@ -2,3 +2,5 @@ data/
 output/
 .pyc
 build/
+__pycache__
+.vscode
